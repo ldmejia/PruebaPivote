@@ -1,0 +1,64 @@
+package transfer
+
+import (
+	"encoding/json"
+	"errors"
+	"net/http"
+
+	"github.com/ldmejia/PruebaPivote/internal/adapters/http/httperror"
+	"github.com/ldmejia/PruebaPivote/internal/adapters/http/middlewares"
+	transferapp "github.com/ldmejia/PruebaPivote/internal/application/transfer"
+	"github.com/ldmejia/PruebaPivote/internal/domain/account"
+	"github.com/ldmejia/PruebaPivote/internal/domain/shared"
+	"github.com/ldmejia/PruebaPivote/internal/domain/transfer"
+)
+
+type HttpHandler struct {
+	uc *transferapp.TransferUseCases
+}
+
+func NewHttpHandler(uc *transferapp.TransferUseCases) *HttpHandler {
+	return &HttpHandler{uc: uc}
+}
+
+func writeTransferError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, transfer.ErrInvalidAmount),
+		errors.Is(err, transfer.ErrSameAccount),
+		errors.Is(err, transfer.ErrCurrencyMismatch):
+		httperror.Write(w, http.StatusBadRequest, "invalid_transfer", err.Error())
+	case errors.Is(err, account.ErrAccountNotFound):
+		httperror.Write(w, http.StatusNotFound, "not_found", err.Error())
+	default:
+		httperror.WriteInternal(w, err)
+	}
+}
+
+func (h *HttpHandler) CreateTransfer(w http.ResponseWriter, r *http.Request) {
+	var req CreateTransferRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httperror.Write(w, http.StatusBadRequest, "invalid_request", "body invalido")
+		return
+	}
+	amount, err := shared.ParseAmount(req.Amount)
+	if err != nil {
+		httperror.Write(w, http.StatusBadRequest, "invalid_amount", "amount invalido, usa formato 100.00")
+		return
+	}
+	t, err := h.uc.Create.Execute(r.Context(), transferapp.CreateTransferInput{
+		UserID:      middlewares.UserID(r.Context()),
+		FromAccount: req.FromAccount,
+		ToAccount:   req.ToAccount,
+		Amount:      amount,
+	})
+	if err != nil {
+		writeTransferError(w, err)
+		return
+	}
+	status := http.StatusCreated
+	if t.Status == transfer.StatusRejected {
+		status = http.StatusUnprocessableEntity
+	}
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(toTransferResponse(t))
+}

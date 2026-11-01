@@ -1,0 +1,120 @@
+package repository
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+
+	"github.com/ldmejia/PruebaPivote/internal/domain/account"
+	"github.com/ldmejia/PruebaPivote/internal/domain/transfer"
+)
+
+var errNegativeBalance = errors.New("el saldo quedaria negativo")
+
+type TransferRepository struct {
+	db *sql.DB
+}
+
+func NewTransferRepository(db *sql.DB) *TransferRepository {
+	return &TransferRepository{db: db}
+}
+
+func (r *TransferRepository) Execute(ctx context.Context, o transfer.Order) (*transfer.Transfer, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	from, to, err := lockAccounts(ctx, tx, o.FromAccount, o.ToAccount)
+	if err != nil {
+		return nil, err
+	}
+	t := &transfer.Transfer{
+		ID:          o.ID,
+		FromAccount: o.FromAccount,
+		ToAccount:   o.ToAccount,
+		Amount:      o.Amount,
+		Currency:    from.Currency,
+		Status:      transfer.StatusCompleted,
+		CreatedAt:   o.CreatedAt,
+	}
+	if reason := transfer.Check(from, to, o.Amount); reason != "" {
+		t.Status, t.Reason = transfer.StatusRejected, reason
+	}
+	if err := insertTransfer(ctx, tx, t); err != nil {
+		return nil, err
+	}
+	if t.Status == transfer.StatusCompleted {
+		if err := moveMoney(ctx, tx, t); err != nil {
+			return nil, err
+		}
+	}
+	return t, tx.Commit()
+}
+
+// las cuentas se bloquean siempre en el mismo orden para no tener deadlocks
+func lockAccounts(ctx context.Context, tx *sql.Tx, fromNumber, toNumber string) (*account.Account, *account.Account, error) {
+	first, second := fromNumber, toNumber
+	if second < first {
+		first, second = second, first
+	}
+	a, err := lockAccount(ctx, tx, first)
+	if err != nil {
+		return nil, nil, err
+	}
+	b, err := lockAccount(ctx, tx, second)
+	if err != nil {
+		return nil, nil, err
+	}
+	if a.Number == fromNumber {
+		return a, b, nil
+	}
+	return b, a, nil
+}
+
+func lockAccount(ctx context.Context, tx *sql.Tx, number string) (*account.Account, error) {
+	return scanAccount(tx.QueryRowContext(ctx, "SELECT "+accountColumns+" FROM accounts WITH (UPDLOCK, ROWLOCK) WHERE number = @p1", number))
+}
+
+func insertTransfer(ctx context.Context, tx *sql.Tx, t *transfer.Transfer) error {
+	_, err := tx.ExecContext(ctx, `INSERT INTO transfers (id, from_account, to_account, amount, currency, status, reason, created_at)
+VALUES (@p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8)`, t.ID, t.FromAccount, t.ToAccount, t.Amount, t.Currency, t.Status, nullString(t.Reason), t.CreatedAt)
+	return err
+}
+
+func moveMoney(ctx context.Context, tx *sql.Tx, t *transfer.Transfer) error {
+	fromBalance, err := addBalance(ctx, tx, t.FromAccount, -t.Amount)
+	if err != nil {
+		return err
+	}
+	toBalance, err := addBalance(ctx, tx, t.ToAccount, t.Amount)
+	if err != nil {
+		return err
+	}
+	if err := insertMovement(ctx, tx, t.FromAccount, t.ID, transfer.MovementDebit, t.Amount, fromBalance); err != nil {
+		return err
+	}
+	return insertMovement(ctx, tx, t.ToAccount, t.ID, transfer.MovementCredit, t.Amount, toBalance)
+}
+
+func addBalance(ctx context.Context, tx *sql.Tx, number string, delta int64) (int64, error) {
+	var balance int64
+	err := tx.QueryRowContext(ctx, `UPDATE accounts SET balance = balance + @p1, updated_at = SYSUTCDATETIME()
+OUTPUT INSERTED.balance
+WHERE number = @p2 AND balance + @p1 >= 0`, delta, number).Scan(&balance)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, errNegativeBalance
+	}
+	return balance, err
+}
+
+func insertMovement(ctx context.Context, tx *sql.Tx, number, transferID, movementType string, amount, balanceAfter int64) error {
+	_, err := tx.ExecContext(ctx, `INSERT INTO movements (account_number, transfer_id, type, amount, balance_after)
+VALUES (@p1, @p2, @p3, @p4, @p5)`, number, nullString(transferID), movementType, amount, balanceAfter)
+	return err
+}
+
+func nullString(s string) sql.NullString {
+	return sql.NullString{String: s, Valid: s != ""}
+}

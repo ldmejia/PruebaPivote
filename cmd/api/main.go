@@ -8,10 +8,12 @@ import (
 	httpadapter "github.com/ldmejia/PruebaPivote/internal/adapters/http"
 	accounthttp "github.com/ldmejia/PruebaPivote/internal/adapters/http/account"
 	authhttp "github.com/ldmejia/PruebaPivote/internal/adapters/http/auth"
+	transferhttp "github.com/ldmejia/PruebaPivote/internal/adapters/http/transfer"
 	"github.com/ldmejia/PruebaPivote/internal/adapters/sqlserver"
 	"github.com/ldmejia/PruebaPivote/internal/adapters/sqlserver/migrations"
 	repository "github.com/ldmejia/PruebaPivote/internal/adapters/sqlserver/repositories"
 	accountapp "github.com/ldmejia/PruebaPivote/internal/application/account"
+	transferapp "github.com/ldmejia/PruebaPivote/internal/application/transfer"
 	"github.com/ldmejia/PruebaPivote/internal/config"
 )
 
@@ -35,7 +37,11 @@ func main() {
 	accountUseCases := accountapp.NewAccountUseCases(accountRepo)
 	accountModule := accounthttp.NewModule(accountUseCases)
 
-	router := httpadapter.NewRouter(secret, authModule, accountModule)
+	transferRepo := repository.NewTransferRepository(db)
+	transferUseCases := transferapp.NewTransferUseCases(accountRepo, transferRepo)
+	transferModule := transferhttp.NewModule(transferUseCases)
+
+	router := httpadapter.NewRouter(secret, authModule, accountModule, transferModule)
 	log.Printf("listening on :%s", cfg.Port)
 	if err := http.ListenAndServe(":"+cfg.Port, router); err != nil {
 		log.Fatal(err)
