@@ -19,6 +19,24 @@ func NewTransferRepository(db *sql.DB) *TransferRepository {
 	return &TransferRepository{db: db}
 }
 
+func (r *TransferRepository) FindByIdempotencyKey(ctx context.Context, ownerID, key string) (*transfer.Transfer, string, error) {
+	var t transfer.Transfer
+	var hash string
+	var reason sql.NullString
+	err := r.db.QueryRowContext(ctx, `SELECT t.id, t.from_account, t.to_account, t.amount, t.currency, t.status, t.reason, t.created_at, k.request_hash
+FROM idempotency_keys k
+JOIN transfers t ON t.id = k.transfer_id
+WHERE k.owner_id = @p1 AND k.idem_key = @p2`, ownerID, key).Scan(&t.ID, &t.FromAccount, &t.ToAccount, &t.Amount, &t.Currency, &t.Status, &reason, &t.CreatedAt, &hash)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, "", transfer.ErrTransferNotFound
+	}
+	if err != nil {
+		return nil, "", err
+	}
+	t.Reason = reason.String
+	return &t, hash, nil
+}
+
 func (r *TransferRepository) Execute(ctx context.Context, o transfer.Order) (*transfer.Transfer, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -49,6 +67,9 @@ func (r *TransferRepository) Execute(ctx context.Context, o transfer.Order) (*tr
 		if err := moveMoney(ctx, tx, t); err != nil {
 			return nil, err
 		}
+	}
+	if err := saveIdempotencyKey(ctx, tx, o, t.ID); err != nil {
+		return nil, err
 	}
 	return t, tx.Commit()
 }
@@ -112,6 +133,15 @@ WHERE number = @p2 AND balance + @p1 >= 0`, delta, number).Scan(&balance)
 func insertMovement(ctx context.Context, tx *sql.Tx, number, transferID, movementType string, amount, balanceAfter int64) error {
 	_, err := tx.ExecContext(ctx, `INSERT INTO movements (account_number, transfer_id, type, amount, balance_after)
 VALUES (@p1, @p2, @p3, @p4, @p5)`, number, nullString(transferID), movementType, amount, balanceAfter)
+	return err
+}
+
+func saveIdempotencyKey(ctx context.Context, tx *sql.Tx, o transfer.Order, transferID string) error {
+	_, err := tx.ExecContext(ctx, `INSERT INTO idempotency_keys (owner_id, idem_key, request_hash, transfer_id)
+VALUES (@p1, @p2, @p3, @p4)`, o.OwnerID, o.IdempotencyKey, o.RequestHash, transferID)
+	if isDuplicateKey(err) {
+		return transfer.ErrDuplicatedKey
+	}
 	return err
 }
 

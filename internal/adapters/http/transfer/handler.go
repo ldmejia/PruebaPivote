@@ -27,6 +27,12 @@ func writeTransferError(w http.ResponseWriter, err error) {
 		errors.Is(err, transfer.ErrSameAccount),
 		errors.Is(err, transfer.ErrCurrencyMismatch):
 		httperror.Write(w, http.StatusBadRequest, "invalid_transfer", err.Error())
+	case errors.Is(err, transfer.ErrIdempotencyKeyRequired):
+		httperror.Write(w, http.StatusBadRequest, "idempotency_key_requied", err.Error())
+	case errors.Is(err, transfer.ErrIdempotencyKeyReused):
+		httperror.Write(w, http.StatusUnprocessableEntity, "idempotency_key_reused", err.Error())
+	case errors.Is(err, transfer.ErrRequestInProgress):
+		httperror.Write(w, http.StatusConflict, "request_in_progress", err.Error())
 	case errors.Is(err, account.ErrAccountNotFound):
 		httperror.Write(w, http.StatusNotFound, "not_found", err.Error())
 	default:
@@ -45,20 +51,24 @@ func (h *HttpHandler) CreateTransfer(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, http.StatusBadRequest, "invalid_amount", "amount invalido, usa formato 100.00")
 		return
 	}
-	t, err := h.uc.Create.Execute(r.Context(), transferapp.CreateTransferInput{
-		UserID:      middlewares.UserID(r.Context()),
-		FromAccount: req.FromAccount,
-		ToAccount:   req.ToAccount,
-		Amount:      amount,
+	out, err := h.uc.Create.Execute(r.Context(), transferapp.CreateTransferInput{
+		UserID:         middlewares.UserID(r.Context()),
+		IdempotencyKey: r.Header.Get("Idempotency-Key"),
+		FromAccount:    req.FromAccount,
+		ToAccount:      req.ToAccount,
+		Amount:         amount,
 	})
 	if err != nil {
 		writeTransferError(w, err)
 		return
 	}
+	if out.Replayed {
+		w.Header().Set("Idempotent-Replayed", "true")
+	}
 	status := http.StatusCreated
-	if t.Status == transfer.StatusRejected {
+	if out.Transfer.Status == transfer.StatusRejected {
 		status = http.StatusUnprocessableEntity
 	}
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(toTransferResponse(t))
+	_ = json.NewEncoder(w).Encode(toTransferResponse(out.Transfer))
 }

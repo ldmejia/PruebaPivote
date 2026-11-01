@@ -9,6 +9,7 @@ import (
 type Config struct {
 	Port         string
 	SQLServerURL string
+	RedisAddr    string
 	JWTSecret    string
 	TokenTTL     time.Duration
 	DevTokens    bool
@@ -18,6 +19,7 @@ func Load() Config {
 	return Config{
 		Port:         env("PORT", "8080"),
 		SQLServerURL: env("SQLSERVER_URL", "sqlserver://sa:Pivote_2026!@localhost:1433?database=pivote"),
+		RedisAddr:    env("REDIS_ADDR", "localhost:6379"),
 		JWTSecret:    env("JWT_SECRET", "cambiar-en-produccion"),
 		TokenTTL:     envDuration("TOKEN_TTL", time.Hour),
 		DevTokens:    envBool("DEV_TOKENS", true),

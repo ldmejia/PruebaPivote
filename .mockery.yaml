@@ -21,3 +21,12 @@ packages:
       structname: "MockTransferRepository"
     interfaces:
       Repository:
+
+  github.com/ldmejia/PruebaPivote/internal/application/transfer:
+    config:
+      dir: "internal/application/transfer"
+      pkgname: "transferapp_test"
+      filename: "locker_mock_test.go"
+      structname: "MockLocker"
+    interfaces:
+      Locker:

@@ -2,6 +2,7 @@ package transferapp_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -13,28 +14,60 @@ import (
 	"github.com/ldmejia/PruebaPivote/internal/domain/transfer"
 )
 
+type mocks struct {
+	accounts  *MockAccountRepository
+	transfers *MockTransferRepository
+	locker    *MockLocker
+}
+
+func newUseCase(t *testing.T) (*transferapp.CreateTransferUseCase, mocks) {
+	m := mocks{
+		accounts:  NewMockAccountRepository(t),
+		transfers: NewMockTransferRepository(t),
+		locker:    NewMockLocker(t),
+	}
+	return transferapp.NewCreateTransferUseCase(m.accounts, m.transfers, m.locker), m
+}
+
 func gtq(number, owner string, balance int64) *account.Account {
 	return &account.Account{Number: number, OwnerID: owner, Currency: account.CurrencyGTQ, Balance: balance}
 }
 
-func TestCreateTransferUseCase_Execute_HappyPath(t *testing.T) {
-	accounts := NewMockAccountRepository(t)
-	transfers := NewMockTransferRepository(t)
-	uc := transferapp.NewCreateTransferUseCase(accounts, transfers)
+func input(amount int64) transferapp.CreateTransferInput {
+	return transferapp.CreateTransferInput{UserID: "ana", IdempotencyKey: "k1", FromAccount: "01", ToAccount: "02", Amount: amount}
+}
 
-	accounts.EXPECT().GetByNumber(mock.Anything, "01").Return(gtq("01", "ana", 1000), nil).Once()
-	accounts.EXPECT().GetByNumber(mock.Anything, "02").Return(gtq("02", "beto", 0), nil).Once()
-	transfers.EXPECT().
+func (m mocks) noPreviousResult() {
+	m.transfers.EXPECT().FindByIdempotencyKey(mock.Anything, "ana", "k1").Return(nil, "", transfer.ErrTransferNotFound).Once()
+}
+
+func (m mocks) lockOK() {
+	m.locker.EXPECT().Lock(mock.Anything, "idem:ana:k1", mock.Anything).Return("token", true, nil).Once()
+	m.locker.EXPECT().Unlock(mock.Anything, "idem:ana:k1", "token").Return(nil).Once()
+}
+
+func (m mocks) accountsOK() {
+	m.accounts.EXPECT().GetByNumber(mock.Anything, "01").Return(gtq("01", "ana", 1000), nil).Once()
+	m.accounts.EXPECT().GetByNumber(mock.Anything, "02").Return(gtq("02", "beto", 0), nil).Once()
+}
+
+func TestCreateTransferUseCase_Execute_HappyPath(t *testing.T) {
+	uc, m := newUseCase(t)
+	m.noPreviousResult()
+	m.lockOK()
+	m.accountsOK()
+	m.transfers.EXPECT().
 		Execute(mock.Anything, mock.MatchedBy(func(o transfer.Order) bool {
-			return o.FromAccount == "01" && o.ToAccount == "02" && o.Amount == 250 && o.ID != ""
+			return o.FromAccount == "01" && o.ToAccount == "02" && o.Amount == 250 && o.OwnerID == "ana" && o.IdempotencyKey == "k1" && o.RequestHash != ""
 		})).
 		Return(&transfer.Transfer{ID: "t1", Status: transfer.StatusCompleted}, nil).
 		Once()
 
-	tr, err := uc.Execute(context.Background(), transferapp.CreateTransferInput{UserID: "ana", FromAccount: "01", ToAccount: "02", Amount: 250})
+	out, err := uc.Execute(context.Background(), input(250))
 
 	require.NoError(t, err)
-	assert.Equal(t, transfer.StatusCompleted, tr.Status)
+	assert.Equal(t, "t1", out.Transfer.ID)
+	assert.False(t, out.Replayed)
 }
 
 func TestCreateTransferUseCase_Execute_Validations(t *testing.T) {
@@ -45,21 +78,21 @@ func TestCreateTransferUseCase_Execute_Validations(t *testing.T) {
 		to    *account.Account
 		want  error
 	}{
-		{"monto cero", transferapp.CreateTransferInput{UserID: "ana", FromAccount: "01", ToAccount: "02"}, nil, nil, transfer.ErrInvalidAmount},
-		{"misma cuenta", transferapp.CreateTransferInput{UserID: "ana", FromAccount: "01", ToAccount: "01", Amount: 1}, nil, nil, transfer.ErrSameAccount},
-		{"cuenta de otro", transferapp.CreateTransferInput{UserID: "beto", FromAccount: "01", ToAccount: "02", Amount: 1}, gtq("01", "ana", 100), nil, account.ErrAccountNotFound},
-		{"otra moneda", transferapp.CreateTransferInput{UserID: "ana", FromAccount: "01", ToAccount: "02", Amount: 1}, gtq("01", "ana", 100), &account.Account{Number: "02", Currency: account.CurrencyUSD}, transfer.ErrCurrencyMismatch},
+		{"monto cero", transferapp.CreateTransferInput{UserID: "ana", IdempotencyKey: "k1", FromAccount: "01", ToAccount: "02"}, nil, nil, transfer.ErrInvalidAmount},
+		{"misma cuenta", transferapp.CreateTransferInput{UserID: "ana", IdempotencyKey: "k1", FromAccount: "01", ToAccount: "01", Amount: 1}, nil, nil, transfer.ErrSameAccount},
+		{"cuenta de otro", input(1), gtq("01", "beto", 100), nil, account.ErrAccountNotFound},
+		{"otra moneda", input(1), gtq("01", "ana", 100), &account.Account{Number: "02", Currency: account.CurrencyUSD}, transfer.ErrCurrencyMismatch},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			accounts := NewMockAccountRepository(t)
-			transfers := NewMockTransferRepository(t)
-			uc := transferapp.NewCreateTransferUseCase(accounts, transfers)
+			uc, m := newUseCase(t)
+			m.noPreviousResult()
+			m.lockOK()
 			if tt.from != nil {
-				accounts.EXPECT().GetByNumber(mock.Anything, "01").Return(tt.from, nil).Once()
+				m.accounts.EXPECT().GetByNumber(mock.Anything, "01").Return(tt.from, nil).Once()
 			}
 			if tt.to != nil {
-				accounts.EXPECT().GetByNumber(mock.Anything, "02").Return(tt.to, nil).Once()
+				m.accounts.EXPECT().GetByNumber(mock.Anything, "02").Return(tt.to, nil).Once()
 			}
 
 			_, err := uc.Execute(context.Background(), tt.input)
@@ -69,15 +102,76 @@ func TestCreateTransferUseCase_Execute_Validations(t *testing.T) {
 	}
 }
 
-func TestCreateTransferUseCase_Execute_DestinationNotFound(t *testing.T) {
-	accounts := NewMockAccountRepository(t)
-	transfers := NewMockTransferRepository(t)
-	uc := transferapp.NewCreateTransferUseCase(accounts, transfers)
+func TestCreateTransferUseCase_Execute_IdempotencyKeyRequired(t *testing.T) {
+	uc, _ := newUseCase(t)
 
-	accounts.EXPECT().GetByNumber(mock.Anything, "01").Return(gtq("01", "ana", 100), nil).Once()
-	accounts.EXPECT().GetByNumber(mock.Anything, "99").Return(nil, account.ErrAccountNotFound).Once()
+	in := input(100)
+	in.IdempotencyKey = ""
+	_, err := uc.Execute(context.Background(), in)
 
-	_, err := uc.Execute(context.Background(), transferapp.CreateTransferInput{UserID: "ana", FromAccount: "01", ToAccount: "99", Amount: 1})
+	assert.ErrorIs(t, err, transfer.ErrIdempotencyKeyRequired)
+}
 
-	assert.ErrorIs(t, err, account.ErrAccountNotFound)
+func TestCreateTransferUseCase_Execute_ReplaySameRequest(t *testing.T) {
+	uc, m := newUseCase(t)
+	saved := &transfer.Transfer{ID: "t1", Status: transfer.StatusCompleted}
+	m.transfers.EXPECT().FindByIdempotencyKey(mock.Anything, "ana", "k1").Return(saved, transfer.RequestHash("01", "02", 100), nil).Once()
+
+	out, err := uc.Execute(context.Background(), input(100))
+
+	require.NoError(t, err)
+	assert.True(t, out.Replayed)
+	assert.Equal(t, "t1", out.Transfer.ID)
+}
+
+func TestCreateTransferUseCase_Execute_KeyReusedWithOtherBody(t *testing.T) {
+	uc, m := newUseCase(t)
+	m.transfers.EXPECT().FindByIdempotencyKey(mock.Anything, "ana", "k1").Return(&transfer.Transfer{ID: "t1"}, "otro-hash", nil).Once()
+
+	_, err := uc.Execute(context.Background(), input(100))
+
+	assert.ErrorIs(t, err, transfer.ErrIdempotencyKeyReused)
+}
+
+func TestCreateTransferUseCase_Execute_SameKeyInProgressWaitsForResult(t *testing.T) {
+	uc, m := newUseCase(t)
+	saved := &transfer.Transfer{ID: "t1", Status: transfer.StatusCompleted}
+	m.noPreviousResult()
+	m.locker.EXPECT().Lock(mock.Anything, "idem:ana:k1", mock.Anything).Return("", false, nil).Once()
+	m.transfers.EXPECT().FindByIdempotencyKey(mock.Anything, "ana", "k1").Return(nil, "", transfer.ErrTransferNotFound).Once()
+	m.transfers.EXPECT().FindByIdempotencyKey(mock.Anything, "ana", "k1").Return(saved, transfer.RequestHash("01", "02", 100), nil).Once()
+
+	out, err := uc.Execute(context.Background(), input(100))
+
+	require.NoError(t, err)
+	assert.True(t, out.Replayed)
+	assert.Equal(t, "t1", out.Transfer.ID)
+}
+
+func TestCreateTransferUseCase_Execute_DuplicatedKeyInDatabase(t *testing.T) {
+	uc, m := newUseCase(t)
+	saved := &transfer.Transfer{ID: "t1", Status: transfer.StatusCompleted}
+	m.noPreviousResult()
+	m.lockOK()
+	m.accountsOK()
+	m.transfers.EXPECT().Execute(mock.Anything, mock.Anything).Return(nil, transfer.ErrDuplicatedKey).Once()
+	m.transfers.EXPECT().FindByIdempotencyKey(mock.Anything, "ana", "k1").Return(saved, transfer.RequestHash("01", "02", 100), nil).Once()
+
+	out, err := uc.Execute(context.Background(), input(100))
+
+	require.NoError(t, err)
+	assert.Equal(t, "t1", out.Transfer.ID)
+}
+
+func TestCreateTransferUseCase_Execute_RedisDownStillWorks(t *testing.T) {
+	uc, m := newUseCase(t)
+	m.noPreviousResult()
+	m.locker.EXPECT().Lock(mock.Anything, "idem:ana:k1", mock.Anything).Return("", false, errors.New("redis caido")).Once()
+	m.accountsOK()
+	m.transfers.EXPECT().Execute(mock.Anything, mock.Anything).Return(&transfer.Transfer{ID: "t1"}, nil).Once()
+
+	out, err := uc.Execute(context.Background(), input(100))
+
+	require.NoError(t, err)
+	assert.Equal(t, "t1", out.Transfer.ID)
 }

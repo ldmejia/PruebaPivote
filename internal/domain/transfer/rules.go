@@ -1,6 +1,12 @@
 package transfer
 
-import "github.com/ldmejia/PruebaPivote/internal/domain/account"
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+
+	"github.com/ldmejia/PruebaPivote/internal/domain/account"
+)
 
 const (
 	ReasonAccountBlocked    = "cuenta_bloqueada"
@@ -15,4 +21,9 @@ func Check(from, to *account.Account, amount int64) string {
 		return ReasonInsufficientFunds
 	}
 	return ""
+}
+
+func RequestHash(fromAccount, toAccount string, amount int64) string {
+	sum := sha256.Sum256([]byte(fmt.Sprintf("%s|%s|%d", fromAccount, toAccount, amount)))
+	return hex.EncodeToString(sum[:])
 }

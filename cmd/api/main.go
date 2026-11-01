@@ -5,10 +5,13 @@ import (
 	"log"
 	"net/http"
 
+	goredis "github.com/redis/go-redis/v9"
+
 	httpadapter "github.com/ldmejia/PruebaPivote/internal/adapters/http"
 	accounthttp "github.com/ldmejia/PruebaPivote/internal/adapters/http/account"
 	authhttp "github.com/ldmejia/PruebaPivote/internal/adapters/http/auth"
 	transferhttp "github.com/ldmejia/PruebaPivote/internal/adapters/http/transfer"
+	"github.com/ldmejia/PruebaPivote/internal/adapters/redis"
 	"github.com/ldmejia/PruebaPivote/internal/adapters/sqlserver"
 	"github.com/ldmejia/PruebaPivote/internal/adapters/sqlserver/migrations"
 	repository "github.com/ldmejia/PruebaPivote/internal/adapters/sqlserver/repositories"
@@ -30,6 +33,12 @@ func main() {
 		log.Fatalf("fallaron las migraciones: %v", err)
 	}
 
+	rdb := goredis.NewClient(&goredis.Options{Addr: cfg.RedisAddr})
+	defer rdb.Close()
+	if err := rdb.Ping(ctx).Err(); err != nil {
+		log.Fatalf("no se pudo conectar a redis: %v", err)
+	}
+
 	secret := []byte(cfg.JWTSecret)
 	authModule := authhttp.NewModule(secret, cfg.TokenTTL, cfg.DevTokens)
 
@@ -38,7 +47,7 @@ func main() {
 	accountModule := accounthttp.NewModule(accountUseCases)
 
 	transferRepo := repository.NewTransferRepository(db)
-	transferUseCases := transferapp.NewTransferUseCases(accountRepo, transferRepo)
+	transferUseCases := transferapp.NewTransferUseCases(accountRepo, transferRepo, redis.NewLocker(rdb))
 	transferModule := transferhttp.NewModule(transferUseCases)
 
 	router := httpadapter.NewRouter(secret, authModule, accountModule, transferModule)

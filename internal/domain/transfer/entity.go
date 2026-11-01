@@ -35,9 +35,12 @@ type Movement struct {
 }
 
 type Order struct {
-	ID          string
-	FromAccount string
-	ToAccount   string
-	Amount      int64
-	CreatedAt   time.Time
+	ID             string
+	OwnerID        string
+	IdempotencyKey string
+	RequestHash    string
+	FromAccount    string
+	ToAccount      string
+	Amount         int64
+	CreatedAt      time.Time
 }
