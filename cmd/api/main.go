@@ -6,9 +6,12 @@ import (
 	"net/http"
 
 	httpadapter "github.com/ldmejia/PruebaPivote/internal/adapters/http"
+	accounthttp "github.com/ldmejia/PruebaPivote/internal/adapters/http/account"
 	authhttp "github.com/ldmejia/PruebaPivote/internal/adapters/http/auth"
 	"github.com/ldmejia/PruebaPivote/internal/adapters/sqlserver"
 	"github.com/ldmejia/PruebaPivote/internal/adapters/sqlserver/migrations"
+	repository "github.com/ldmejia/PruebaPivote/internal/adapters/sqlserver/repositories"
+	accountapp "github.com/ldmejia/PruebaPivote/internal/application/account"
 	"github.com/ldmejia/PruebaPivote/internal/config"
 )
 
@@ -28,7 +31,11 @@ func main() {
 	secret := []byte(cfg.JWTSecret)
 	authModule := authhttp.NewModule(secret, cfg.TokenTTL, cfg.DevTokens)
 
-	router := httpadapter.NewRouter(secret, authModule)
+	accountRepo := repository.NewAccountRepository(db)
+	accountUseCases := accountapp.NewAccountUseCases(accountRepo)
+	accountModule := accounthttp.NewModule(accountUseCases)
+
+	router := httpadapter.NewRouter(secret, authModule, accountModule)
 	log.Printf("listening on :%s", cfg.Port)
 	if err := http.ListenAndServe(":"+cfg.Port, router); err != nil {
 		log.Fatal(err)
