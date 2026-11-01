@@ -49,6 +49,10 @@ services:
       context: .
       args:
         SERVICE: api
+    environment:
+      SQLSERVER_URL: "sqlserver://sa:Pivote_2026!@sqlserver:1433?database=pivote"
+      JWT_SECRET: "secreto-local-pivote"
+      DEV_TOKENS: "true"
     ports:
       - "8080:8080"
     depends_on:
