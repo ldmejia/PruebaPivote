@@ -1,0 +1,11 @@
+# binarios
+/bin/
+*.exe
+*.test
+*.out
+coverage.*
+
+# entorno local
+.env
+.idea/
+.vscode/
