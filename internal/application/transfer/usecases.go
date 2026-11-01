@@ -110,7 +110,7 @@ func (u *CreateTransferUseCase) newOrder(ctx context.Context, input CreateTransf
 		FromAccount:    from.Number,
 		ToAccount:      to.Number,
 		Amount:         input.Amount,
-		CreatedAt:      time.Now().UTC(),
+		CreatedAt:      time.Now().UTC().Truncate(time.Microsecond),
 	}, nil
 }
 

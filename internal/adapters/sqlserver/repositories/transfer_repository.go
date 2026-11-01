@@ -23,7 +23,7 @@ func (r *TransferRepository) FindByIdempotencyKey(ctx context.Context, ownerID, 
 	var t transfer.Transfer
 	var hash string
 	var reason sql.NullString
-	err := r.db.QueryRowContext(ctx, `SELECT t.id, t.from_account, t.to_account, t.amount, t.currency, t.status, t.reason, t.created_at, k.request_hash
+	err := r.db.QueryRowContext(ctx, `SELECT LOWER(CONVERT(VARCHAR(36), t.id)), t.from_account, t.to_account, t.amount, t.currency, t.status, t.reason, t.created_at, k.request_hash
 FROM idempotency_keys k
 JOIN transfers t ON t.id = k.transfer_id
 WHERE k.owner_id = @p1 AND k.idem_key = @p2`, ownerID, key).Scan(&t.ID, &t.FromAccount, &t.ToAccount, &t.Amount, &t.Currency, &t.Status, &reason, &t.CreatedAt, &hash)
