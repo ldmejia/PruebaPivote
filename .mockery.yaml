@@ -1,0 +1,23 @@
+template: testify
+packages:
+  github.com/ldmejia/PruebaPivote/internal/domain/account:
+    interfaces:
+      Repository:
+        configs:
+          - dir: "internal/application/account"
+            pkgname: "accountapp_test"
+            filename: "account_repository_mock_test.go"
+            structname: "MockAccountRepository"
+          - dir: "internal/application/transfer"
+            pkgname: "transferapp_test"
+            filename: "account_repository_mock_test.go"
+            structname: "MockAccountRepository"
+
+  github.com/ldmejia/PruebaPivote/internal/domain/transfer:
+    config:
+      dir: "internal/application/transfer"
+      pkgname: "transferapp_test"
+      filename: "transfer_repository_mock_test.go"
+      structname: "MockTransferRepository"
+    interfaces:
+      Repository:
