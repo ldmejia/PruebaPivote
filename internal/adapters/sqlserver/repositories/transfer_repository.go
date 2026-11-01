@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"time"
 
 	"github.com/ldmejia/PruebaPivote/internal/domain/account"
 	"github.com/ldmejia/PruebaPivote/internal/domain/transfer"
@@ -57,7 +58,12 @@ func (r *TransferRepository) Execute(ctx context.Context, o transfer.Order) (*tr
 		Status:      transfer.StatusCompleted,
 		CreatedAt:   o.CreatedAt,
 	}
-	if reason := transfer.Check(from, to, o.Amount); reason != "" {
+	day := o.CreatedAt
+	used, err := dailyUsage(ctx, tx, from.Number, day)
+	if err != nil {
+		return nil, err
+	}
+	if reason := transfer.Check(from, to, o.Amount, used); reason != "" {
 		t.Status, t.Reason = transfer.StatusRejected, reason
 	}
 	if err := insertTransfer(ctx, tx, t); err != nil {
@@ -65,6 +71,9 @@ func (r *TransferRepository) Execute(ctx context.Context, o transfer.Order) (*tr
 	}
 	if t.Status == transfer.StatusCompleted {
 		if err := moveMoney(ctx, tx, t); err != nil {
+			return nil, err
+		}
+		if err := addDailyUsage(ctx, tx, from.Number, day, o.Amount); err != nil {
 			return nil, err
 		}
 	}
@@ -133,6 +142,23 @@ WHERE number = @p2 AND balance + @p1 >= 0`, delta, number).Scan(&balance)
 func insertMovement(ctx context.Context, tx *sql.Tx, number, transferID, movementType string, amount, balanceAfter int64) error {
 	_, err := tx.ExecContext(ctx, `INSERT INTO movements (account_number, transfer_id, type, amount, balance_after)
 VALUES (@p1, @p2, @p3, @p4, @p5)`, number, nullString(transferID), movementType, amount, balanceAfter)
+	return err
+}
+
+func dailyUsage(ctx context.Context, tx *sql.Tx, number string, day time.Time) (int64, error) {
+	var total int64
+	err := tx.QueryRowContext(ctx, `SELECT total FROM daily_usage WITH (UPDLOCK, HOLDLOCK)
+WHERE account_number = @p1 AND usage_date = @p2`, number, day.Format(time.DateOnly)).Scan(&total)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, nil
+	}
+	return total, err
+}
+
+func addDailyUsage(ctx context.Context, tx *sql.Tx, number string, day time.Time, amount int64) error {
+	_, err := tx.ExecContext(ctx, `UPDATE daily_usage SET total = total + @p3 WHERE account_number = @p1 AND usage_date = @p2;
+IF @@ROWCOUNT = 0
+    INSERT INTO daily_usage (account_number, usage_date, total) VALUES (@p1, @p2, @p3);`, number, day.Format(time.DateOnly), amount)
 	return err
 }
 

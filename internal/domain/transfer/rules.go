@@ -11,14 +11,25 @@ import (
 const (
 	ReasonAccountBlocked    = "cuenta_bloqueada"
 	ReasonInsufficientFunds = "saldo_insuficiente"
+	ReasonDailyLimit        = "limite_diario_excedido"
 )
 
-func Check(from, to *account.Account, amount int64) string {
+func DailyLimit(currency string) int64 {
+	if currency == account.CurrencyUSD {
+		return 130000
+	}
+	return 1000000
+}
+
+func Check(from, to *account.Account, amount, usedToday int64) string {
 	if from.Blocked || to.Blocked {
 		return ReasonAccountBlocked
 	}
 	if from.Balance < amount {
 		return ReasonInsufficientFunds
+	}
+	if usedToday+amount > DailyLimit(from.Currency) {
+		return ReasonDailyLimit
 	}
 	return ""
 }
