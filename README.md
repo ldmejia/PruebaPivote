@@ -2,7 +2,7 @@
 
 Microservicio de transferencias en Go para la prueba técnica de Pivote Backend.
 
-Permite abrir cuentas en quetzales o dólares, consultar el saldo, bloquear y desbloquear cuentas, hacer trasferencias entre cuentas de la misma moneda y ver el estado de cuenta.
+Permite abrir cuentas en quetzales o dólares, consultar el saldo, bloquear y desbloquear cuentas, hacer transferencias entre cuentas de la misma moneda y ver el estado de cuenta.
 
 ## Cómo ejecutarlo
 
@@ -165,7 +165,7 @@ La tabla de movimientos tiene un trigger que impide editarlos o borrarlos, así 
 
 La Idempotency-Key se guarda junto con la transferencia. Si llega otra vez, se devuelve la misma respuesta, aunque sea días después. Si llega con otro monto, se rechaza.
 
-El límite diario se lleva por cuenta y por día de Guatmala, dentro de la misma transacción. Solo cuentan las transferencias que se completaron.
+El límite diario se lleva por cuenta y por día de Guatemala, dentro de la misma transacción. Solo cuentan las transferencias que se completaron.
 
 Los eventos se guardan primero en una tabla (outbox) junto con la transferencia, y otro proceso los publica en RabbitMQ. Si RabbitMQ está caído, los eventos esperan y salen cuando vuelve.
 

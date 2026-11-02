@@ -52,7 +52,7 @@ func (r *Relay) tick(ctx context.Context) {
 	}
 	n, err := r.store.PublishPending(ctx, 100, r.publish)
 	if n > 0 {
-		log.Printf("eventos publicdos: %d", n)
+		log.Printf("eventos publicados: %d", n)
 	}
 	if err != nil {
 		log.Printf("error publicando el outbox: %v", err)

@@ -20,5 +20,5 @@ func (m *Module) Register(mux *http.ServeMux, auth func(http.Handler) http.Handl
 	mux.Handle("GET /accounts/{number}", auth(http.HandlerFunc(m.handler.GetAccount)))
 	mux.Handle("GET /accounts/{number}/statement", auth(http.HandlerFunc(m.handler.GetStatement)))
 	mux.Handle("POST /accounts/{number}/block", auth(http.HandlerFunc(m.handler.BlockAccount)))
-	mux.Handle("POST /accounts/{number}/unblock", auth(http.HandlerFunc(m.handler.UnblokAccount)))
+	mux.Handle("POST /accounts/{number}/unblock", auth(http.HandlerFunc(m.handler.UnblockAccount)))
 }

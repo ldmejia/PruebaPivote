@@ -35,7 +35,7 @@ func main() {
 
 	db, err := sqlserver.Open(ctx, cfg.SQLServerURL)
 	if err != nil {
-		log.Fatalf("no se pudo conectar a sql sever: %v", err)
+		log.Fatalf("no se pudo conectar a sql server: %v", err)
 	}
 	defer db.Close()
 	if err := sqlserver.Migrate(ctx, db, migrations.Files); err != nil {

@@ -30,7 +30,7 @@ func writeTransferError(w http.ResponseWriter, err error) {
 		errors.Is(err, transfer.ErrCurrencyMismatch):
 		httperror.Write(w, http.StatusBadRequest, "invalid_transfer", err.Error())
 	case errors.Is(err, transfer.ErrIdempotencyKeyRequired):
-		httperror.Write(w, http.StatusBadRequest, "idempotency_key_requied", err.Error())
+		httperror.Write(w, http.StatusBadRequest, "idempotency_key_required", err.Error())
 	case errors.Is(err, transfer.ErrIdempotencyKeyReused):
 		httperror.Write(w, http.StatusUnprocessableEntity, "idempotency_key_reused", err.Error())
 	case errors.Is(err, transfer.ErrRequestInProgress):

@@ -93,7 +93,7 @@ func (h *HttpHandler) BlockAccount(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(toAccountResponse(a))
 }
 
-func (h *HttpHandler) UnblokAccount(w http.ResponseWriter, r *http.Request) {
+func (h *HttpHandler) UnblockAccount(w http.ResponseWriter, r *http.Request) {
 	a, err := h.uc.Unblock.Execute(r.Context(), accountapp.GetAccountInput{
 		UserID: middlewares.UserID(r.Context()),
 		Number: r.PathValue("number"),
