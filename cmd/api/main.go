@@ -2,8 +2,12 @@ package main
 
 import (
 	"context"
+	"expvar"
 	"log"
-	"net/http"
+	"os"
+	"os/signal"
+	"sync"
+	"syscall"
 	"time"
 
 	goredis "github.com/redis/go-redis/v9"
@@ -12,6 +16,7 @@ import (
 	httpadapter "github.com/ldmejia/PruebaPivote/internal/adapters/http"
 	accounthttp "github.com/ldmejia/PruebaPivote/internal/adapters/http/account"
 	authhttp "github.com/ldmejia/PruebaPivote/internal/adapters/http/auth"
+	healthhttp "github.com/ldmejia/PruebaPivote/internal/adapters/http/health"
 	transferhttp "github.com/ldmejia/PruebaPivote/internal/adapters/http/transfer"
 	"github.com/ldmejia/PruebaPivote/internal/adapters/rabbitmq"
 	"github.com/ldmejia/PruebaPivote/internal/adapters/redis"
@@ -24,7 +29,8 @@ import (
 )
 
 func main() {
-	ctx := context.Background()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 	cfg := config.Load()
 
 	db, err := sqlserver.Open(ctx, cfg.SQLServerURL)
@@ -42,11 +48,17 @@ func main() {
 		log.Fatalf("no se pudo conectar a redis: %v", err)
 	}
 
-	relay := rabbitmq.NewRelay(repository.NewOutboxRepository(db), cfg.RabbitMQURL, time.Second)
-	go relay.Run(ctx)
+	relayCtx, stopRelay := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		rabbitmq.NewRelay(repository.NewOutboxRepository(db), cfg.RabbitMQURL, time.Second).Run(relayCtx)
+	}()
 
 	secret := []byte(cfg.JWTSecret)
 	authModule := authhttp.NewModule(secret, cfg.TokenTTL, cfg.DevTokens)
+	healthModule := healthhttp.NewModule(db, rdb)
 
 	accountRepo := repository.NewAccountRepository(db)
 	accountUseCases := accountapp.NewAccountUseCases(accountRepo)
@@ -54,12 +66,17 @@ func main() {
 
 	transferRepo := repository.NewTransferRepository(db)
 	coreClient := core.NewClient(cfg.CoreURL, cfg.CoreTimeout, core.NewBreaker(5, 15*time.Second))
+	expvar.Publish("core_breaker", expvar.Func(func() any { return coreClient.BreakerState() }))
 	transferUseCases := transferapp.NewTransferUseCases(accountRepo, transferRepo, redis.NewLocker(rdb), coreClient, redis.NewFlags(rdb))
 	transferModule := transferhttp.NewModule(transferUseCases)
 
-	router := httpadapter.NewRouter(secret, authModule, accountModule, transferModule)
-	log.Printf("listening on :%s", cfg.Port)
-	if err := http.ListenAndServe(":"+cfg.Port, router); err != nil {
-		log.Fatal(err)
+	router := httpadapter.NewRouter(secret, healthModule, authModule, accountModule, transferModule)
+	srv := httpadapter.NewServer(":"+cfg.Port, router)
+	if err := srv.Run(ctx); err != nil {
+		log.Printf("error en el servidor: %v", err)
 	}
+
+	stopRelay()
+	wg.Wait()
+	log.Println("api detenida")
 }

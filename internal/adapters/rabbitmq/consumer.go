@@ -61,6 +61,8 @@ func (c *Consumer) consume(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
+			log.Println("apagando auditor, se deja de consumir")
+			ch.Cancel("auditor", false)
 			return nil
 		case err := <-closed:
 			return err
