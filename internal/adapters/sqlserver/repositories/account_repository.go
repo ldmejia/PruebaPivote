@@ -39,7 +39,7 @@ func (r *AccountRepository) Create(ctx context.Context, a *account.Account) erro
 	defer tx.Rollback()
 	err = tx.QueryRowContext(ctx, `INSERT INTO accounts (number, owner_id, currency, balance)
 OUTPUT INSERTED.id, INSERTED.created_at
-VALUES (@p1, @p2, @p3, @p4)`, a.Number, a.OwnerID, a.Currency, a.Balance).Scan(&a.ID, &a.CreatedAt)
+VALUES (@p1, @p2, @p3, @p4)`, vc(a.Number), vc(a.OwnerID), vc(a.Currency), a.Balance).Scan(&a.ID, &a.CreatedAt)
 	if isDuplicateKey(err) {
 		return account.ErrDuplicatedNumber
 	}
@@ -55,11 +55,11 @@ VALUES (@p1, @p2, @p3, @p4)`, a.Number, a.OwnerID, a.Currency, a.Balance).Scan(&
 }
 
 func (r *AccountRepository) GetByNumber(ctx context.Context, number string) (*account.Account, error) {
-	return scanAccount(r.db.QueryRowContext(ctx, "SELECT "+accountColumns+" FROM accounts WHERE number = @p1", number))
+	return scanAccount(r.db.QueryRowContext(ctx, "SELECT "+accountColumns+" FROM accounts WHERE number = @p1", vc(number)))
 }
 
 func (r *AccountRepository) ListByOwner(ctx context.Context, ownerID string) ([]*account.Account, error) {
-	rows, err := r.db.QueryContext(ctx, "SELECT "+accountColumns+" FROM accounts WHERE owner_id = @p1 ORDER BY created_at", ownerID)
+	rows, err := r.db.QueryContext(ctx, "SELECT "+accountColumns+" FROM accounts WHERE owner_id = @p1 ORDER BY created_at", vc(ownerID))
 	if err != nil {
 		return nil, err
 	}
@@ -76,7 +76,7 @@ func (r *AccountRepository) ListByOwner(ctx context.Context, ownerID string) ([]
 }
 
 func (r *AccountRepository) UpdateBlocked(ctx context.Context, a *account.Account) error {
-	res, err := r.db.ExecContext(ctx, "UPDATE accounts SET blocked = @p1, updated_at = SYSUTCDATETIME() WHERE number = @p2", a.Blocked, a.Number)
+	res, err := r.db.ExecContext(ctx, "UPDATE accounts SET blocked = @p1, updated_at = SYSUTCDATETIME() WHERE number = @p2", a.Blocked, vc(a.Number))
 	if err != nil {
 		return err
 	}
@@ -93,7 +93,7 @@ func (r *AccountRepository) UpdateBlocked(ctx context.Context, a *account.Accoun
 func (r *AccountRepository) ListMovements(ctx context.Context, number string, from, to time.Time, limit, offset int) ([]*account.Movement, int, error) {
 	var total int
 	err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM movements
-WHERE account_number = @p1 AND created_at >= @p2 AND created_at < @p3`, number, from, to).Scan(&total)
+WHERE account_number = @p1 AND created_at >= @p2 AND created_at < @p3`, vc(number), from, to).Scan(&total)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -101,7 +101,7 @@ WHERE account_number = @p1 AND created_at >= @p2 AND created_at < @p3`, number, 
 FROM movements
 WHERE account_number = @p1 AND created_at >= @p2 AND created_at < @p3
 ORDER BY created_at DESC, id DESC
-OFFSET @p4 ROWS FETCH NEXT @p5 ROWS ONLY`, number, from, to, offset, limit)
+OFFSET @p4 ROWS FETCH NEXT @p5 ROWS ONLY`, vc(number), from, to, offset, limit)
 	if err != nil {
 		return nil, 0, err
 	}

@@ -29,7 +29,7 @@ func (r *TransferRepository) FindByIdempotencyKey(ctx context.Context, ownerID, 
 	err := r.db.QueryRowContext(ctx, `SELECT LOWER(CONVERT(VARCHAR(36), t.id)), t.from_account, t.to_account, t.amount, t.currency, t.status, t.reason, t.created_at, k.request_hash
 FROM idempotency_keys k
 JOIN transfers t ON t.id = k.transfer_id
-WHERE k.owner_id = @p1 AND k.idem_key = @p2`, ownerID, key).Scan(&t.ID, &t.FromAccount, &t.ToAccount, &t.Amount, &t.Currency, &t.Status, &reason, &t.CreatedAt, &hash)
+WHERE k.owner_id = @p1 AND k.idem_key = @p2`, vc(ownerID), vc(key)).Scan(&t.ID, &t.FromAccount, &t.ToAccount, &t.Amount, &t.Currency, &t.Status, &reason, &t.CreatedAt, &hash)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, "", transfer.ErrTransferNotFound
 	}
@@ -41,6 +41,18 @@ WHERE k.owner_id = @p1 AND k.idem_key = @p2`, ownerID, key).Scan(&t.ID, &t.FromA
 }
 
 func (r *TransferRepository) Execute(ctx context.Context, o transfer.Order) (*transfer.Transfer, error) {
+	var t *transfer.Transfer
+	var err error
+	for i := 0; i < 3; i++ {
+		t, err = r.execute(ctx, o)
+		if !isDeadlock(err) {
+			return t, err
+		}
+	}
+	return t, err
+}
+
+func (r *TransferRepository) execute(ctx context.Context, o transfer.Order) (*transfer.Transfer, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -113,12 +125,12 @@ func lockAccounts(ctx context.Context, tx *sql.Tx, fromNumber, toNumber string) 
 }
 
 func lockAccount(ctx context.Context, tx *sql.Tx, number string) (*account.Account, error) {
-	return scanAccount(tx.QueryRowContext(ctx, "SELECT "+accountColumns+" FROM accounts WITH (UPDLOCK, ROWLOCK) WHERE number = @p1", number))
+	return scanAccount(tx.QueryRowContext(ctx, "SELECT "+accountColumns+" FROM accounts WITH (UPDLOCK, ROWLOCK) WHERE number = @p1", vc(number)))
 }
 
 func insertTransfer(ctx context.Context, tx *sql.Tx, t *transfer.Transfer) error {
 	_, err := tx.ExecContext(ctx, `INSERT INTO transfers (id, from_account, to_account, amount, currency, status, reason, created_at)
-VALUES (@p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8)`, t.ID, t.FromAccount, t.ToAccount, t.Amount, t.Currency, t.Status, nullString(t.Reason), t.CreatedAt)
+VALUES (@p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8)`, t.ID, vc(t.FromAccount), vc(t.ToAccount), t.Amount, vc(t.Currency), vc(t.Status), nullString(t.Reason), t.CreatedAt)
 	return err
 }
 
@@ -141,7 +153,7 @@ func addBalance(ctx context.Context, tx *sql.Tx, number string, delta int64) (in
 	var balance int64
 	err := tx.QueryRowContext(ctx, `UPDATE accounts SET balance = balance + @p1, updated_at = SYSUTCDATETIME()
 OUTPUT INSERTED.balance
-WHERE number = @p2 AND balance + @p1 >= 0`, delta, number).Scan(&balance)
+WHERE number = @p2 AND balance + @p1 >= 0`, delta, vc(number)).Scan(&balance)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, errNegativeBalance
 	}
@@ -150,14 +162,14 @@ WHERE number = @p2 AND balance + @p1 >= 0`, delta, number).Scan(&balance)
 
 func insertMovement(ctx context.Context, tx *sql.Tx, number, transferID, movementType string, amount, balanceAfter int64) error {
 	_, err := tx.ExecContext(ctx, `INSERT INTO movements (account_number, transfer_id, type, amount, balance_after)
-VALUES (@p1, @p2, @p3, @p4, @p5)`, number, nullString(transferID), movementType, amount, balanceAfter)
+VALUES (@p1, @p2, @p3, @p4, @p5)`, vc(number), nullString(transferID), vc(movementType), amount, balanceAfter)
 	return err
 }
 
 func dailyUsage(ctx context.Context, tx *sql.Tx, number string, day time.Time) (int64, error) {
 	var total int64
 	err := tx.QueryRowContext(ctx, `SELECT total FROM daily_usage WITH (UPDLOCK, HOLDLOCK)
-WHERE account_number = @p1 AND usage_date = @p2`, number, day.Format(time.DateOnly)).Scan(&total)
+WHERE account_number = @p1 AND usage_date = @p2`, vc(number), day.Format(time.DateOnly)).Scan(&total)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, nil
 	}
@@ -167,7 +179,7 @@ WHERE account_number = @p1 AND usage_date = @p2`, number, day.Format(time.DateOn
 func addDailyUsage(ctx context.Context, tx *sql.Tx, number string, day time.Time, amount int64) error {
 	_, err := tx.ExecContext(ctx, `UPDATE daily_usage SET total = total + @p3 WHERE account_number = @p1 AND usage_date = @p2;
 IF @@ROWCOUNT = 0
-    INSERT INTO daily_usage (account_number, usage_date, total) VALUES (@p1, @p2, @p3);`, number, day.Format(time.DateOnly), amount)
+    INSERT INTO daily_usage (account_number, usage_date, total) VALUES (@p1, @p2, @p3);`, vc(number), day.Format(time.DateOnly), amount)
 	return err
 }
 
@@ -176,13 +188,13 @@ func insertOutbox(ctx context.Context, tx *sql.Tx, ev transfer.Event) error {
 	if err != nil {
 		return err
 	}
-	_, err = tx.ExecContext(ctx, "INSERT INTO outbox (event_id, event_type, payload) VALUES (@p1, @p2, @p3)", ev.ID, ev.Type, string(payload))
+	_, err = tx.ExecContext(ctx, "INSERT INTO outbox (event_id, event_type, payload) VALUES (@p1, @p2, @p3)", ev.ID, vc(ev.Type), string(payload))
 	return err
 }
 
 func saveIdempotencyKey(ctx context.Context, tx *sql.Tx, o transfer.Order, transferID string) error {
 	_, err := tx.ExecContext(ctx, `INSERT INTO idempotency_keys (owner_id, idem_key, request_hash, transfer_id)
-VALUES (@p1, @p2, @p3, @p4)`, o.OwnerID, o.IdempotencyKey, o.RequestHash, transferID)
+VALUES (@p1, @p2, @p3, @p4)`, vc(o.OwnerID), vc(o.IdempotencyKey), vc(o.RequestHash), transferID)
 	if isDuplicateKey(err) {
 		return transfer.ErrDuplicatedKey
 	}
