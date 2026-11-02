@@ -12,4 +12,7 @@ var (
 	ErrRequestInProgress      = errors.New("ya hay una solicitud en proceso con esa Idempotency-Key, intenta de nuevo")
 	ErrDuplicatedKey          = errors.New("idempotency key duplicada")
 	ErrTransferNotFound       = errors.New("transferencia no encontrada")
+
+	ErrBeneficiaryRejected = errors.New("el core rechazo al beneficiario")
+	ErrCoreUnavailable     = errors.New("el core no esta disponible")
 )

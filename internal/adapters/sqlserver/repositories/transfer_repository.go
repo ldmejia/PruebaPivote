@@ -64,7 +64,11 @@ func (r *TransferRepository) Execute(ctx context.Context, o transfer.Order) (*tr
 	if err != nil {
 		return nil, err
 	}
-	if reason := transfer.Check(from, to, o.Amount, used); reason != "" {
+	reason := transfer.Check(from, to, o.Amount, used)
+	if reason == "" {
+		reason = o.CoreReason
+	}
+	if reason != "" {
 		t.Status, t.Reason = transfer.StatusRejected, reason
 	}
 	if err := insertTransfer(ctx, tx, t); err != nil {

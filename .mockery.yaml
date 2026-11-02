@@ -30,6 +30,10 @@ packages:
       structname: "MockLocker"
     interfaces:
       Locker:
+      CoreValidator:
+        config:
+          filename: "core_validator_mock_test.go"
+          structname: "MockCoreValidator"
 
   github.com/ldmejia/PruebaPivote/internal/domain/audit:
     config:

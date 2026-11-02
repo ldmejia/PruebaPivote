@@ -8,6 +8,7 @@ import (
 
 	goredis "github.com/redis/go-redis/v9"
 
+	"github.com/ldmejia/PruebaPivote/internal/adapters/core"
 	httpadapter "github.com/ldmejia/PruebaPivote/internal/adapters/http"
 	accounthttp "github.com/ldmejia/PruebaPivote/internal/adapters/http/account"
 	authhttp "github.com/ldmejia/PruebaPivote/internal/adapters/http/auth"
@@ -52,7 +53,8 @@ func main() {
 	accountModule := accounthttp.NewModule(accountUseCases)
 
 	transferRepo := repository.NewTransferRepository(db)
-	transferUseCases := transferapp.NewTransferUseCases(accountRepo, transferRepo, redis.NewLocker(rdb))
+	coreClient := core.NewClient(cfg.CoreURL, cfg.CoreTimeout, core.NewBreaker(5, 15*time.Second))
+	transferUseCases := transferapp.NewTransferUseCases(accountRepo, transferRepo, redis.NewLocker(rdb), coreClient)
 	transferModule := transferhttp.NewModule(transferUseCases)
 
 	router := httpadapter.NewRouter(secret, authModule, accountModule, transferModule)

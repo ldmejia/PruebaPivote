@@ -20,9 +20,9 @@ type TransferUseCases struct {
 	Create *CreateTransferUseCase
 }
 
-func NewTransferUseCases(accounts account.Repository, transfers transfer.Repository, locker Locker) *TransferUseCases {
+func NewTransferUseCases(accounts account.Repository, transfers transfer.Repository, locker Locker, core CoreValidator) *TransferUseCases {
 	return &TransferUseCases{
-		Create: NewCreateTransferUseCase(accounts, transfers, locker),
+		Create: NewCreateTransferUseCase(accounts, transfers, locker, core),
 	}
 }
 
@@ -43,10 +43,11 @@ type CreateTransferUseCase struct {
 	accounts  account.Repository
 	transfers transfer.Repository
 	locker    Locker
+	core      CoreValidator
 }
 
-func NewCreateTransferUseCase(accounts account.Repository, transfers transfer.Repository, locker Locker) *CreateTransferUseCase {
-	return &CreateTransferUseCase{accounts: accounts, transfers: transfers, locker: locker}
+func NewCreateTransferUseCase(accounts account.Repository, transfers transfer.Repository, locker Locker, core CoreValidator) *CreateTransferUseCase {
+	return &CreateTransferUseCase{accounts: accounts, transfers: transfers, locker: locker, core: core}
 }
 
 func (u *CreateTransferUseCase) Execute(ctx context.Context, input CreateTransferInput) (*CreateTransferOutput, error) {
@@ -102,7 +103,7 @@ func (u *CreateTransferUseCase) newOrder(ctx context.Context, input CreateTransf
 	if from.Currency != to.Currency {
 		return transfer.Order{}, transfer.ErrCurrencyMismatch
 	}
-	return transfer.Order{
+	o := transfer.Order{
 		ID:             uuid.NewString(),
 		OwnerID:        input.UserID,
 		IdempotencyKey: input.IdempotencyKey,
@@ -111,7 +112,34 @@ func (u *CreateTransferUseCase) newOrder(ctx context.Context, input CreateTransf
 		ToAccount:      to.Number,
 		Amount:         input.Amount,
 		CreatedAt:      time.Now().UTC().Truncate(time.Microsecond),
-	}, nil
+	}
+	o.CoreReason = u.validateWithCore(ctx, from, to, o)
+	return o, nil
+}
+
+func (u *CreateTransferUseCase) validateWithCore(ctx context.Context, from, to *account.Account, o transfer.Order) string {
+	if o.Amount <= transfer.CoreThreshold(from.Currency) {
+		return ""
+	}
+	// si igual se va a rechazar no vale la pena esperar al core
+	if transfer.Check(from, to, o.Amount, 0) != "" {
+		return ""
+	}
+	err := u.core.ValidateBeneficiary(ctx, &transfer.Transfer{
+		ID:          o.ID,
+		FromAccount: o.FromAccount,
+		ToAccount:   o.ToAccount,
+		Amount:      o.Amount,
+		Currency:    from.Currency,
+	})
+	switch {
+	case err == nil:
+		return ""
+	case errors.Is(err, transfer.ErrBeneficiaryRejected):
+		return transfer.ReasonCoreRejected
+	default:
+		return transfer.ReasonCoreUnavailable
+	}
 }
 
 func (u *CreateTransferUseCase) replay(ctx context.Context, input CreateTransferInput, hash string) (*CreateTransferOutput, error) {

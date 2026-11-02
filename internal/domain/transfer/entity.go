@@ -42,5 +42,6 @@ type Order struct {
 	FromAccount    string
 	ToAccount      string
 	Amount         int64
+	CoreReason     string
 	CreatedAt      time.Time
 }

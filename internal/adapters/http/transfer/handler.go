@@ -1,9 +1,11 @@
 package transfer
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/ldmejia/PruebaPivote/internal/adapters/http/httperror"
 	"github.com/ldmejia/PruebaPivote/internal/adapters/http/middlewares"
@@ -33,6 +35,8 @@ func writeTransferError(w http.ResponseWriter, err error) {
 		httperror.Write(w, http.StatusUnprocessableEntity, "idempotency_key_reused", err.Error())
 	case errors.Is(err, transfer.ErrRequestInProgress):
 		httperror.Write(w, http.StatusConflict, "request_in_progress", err.Error())
+	case errors.Is(err, context.DeadlineExceeded):
+		httperror.Write(w, http.StatusServiceUnavailable, "timeout", "la operacion tardo demasiado, reintenta con la misma Idempotency-Key")
 	case errors.Is(err, account.ErrAccountNotFound):
 		httperror.Write(w, http.StatusNotFound, "not_found", err.Error())
 	default:
@@ -51,7 +55,9 @@ func (h *HttpHandler) CreateTransfer(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, http.StatusBadRequest, "invalid_amount", "amount invalido, usa formato 100.00")
 		return
 	}
-	out, err := h.uc.Create.Execute(r.Context(), transferapp.CreateTransferInput{
+	ctx, cancel := context.WithTimeout(r.Context(), 4500*time.Millisecond)
+	defer cancel()
+	out, err := h.uc.Create.Execute(ctx, transferapp.CreateTransferInput{
 		UserID:         middlewares.UserID(r.Context()),
 		IdempotencyKey: r.Header.Get("Idempotency-Key"),
 		FromAccount:    req.FromAccount,

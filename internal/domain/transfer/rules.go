@@ -12,6 +12,8 @@ const (
 	ReasonAccountBlocked    = "cuenta_bloqueada"
 	ReasonInsufficientFunds = "saldo_insuficiente"
 	ReasonDailyLimit        = "limite_diario_excedido"
+	ReasonCoreRejected      = "beneficiario_rechazado"
+	ReasonCoreUnavailable   = "core_no_disponible"
 )
 
 func DailyLimit(currency string) int64 {
@@ -19,6 +21,13 @@ func DailyLimit(currency string) int64 {
 		return 130000
 	}
 	return 1000000
+}
+
+func CoreThreshold(currency string) int64 {
+	if currency == account.CurrencyUSD {
+		return 65000
+	}
+	return 500000
 }
 
 func Check(from, to *account.Account, amount, usedToday int64) string {

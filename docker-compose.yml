@@ -53,6 +53,7 @@ services:
       SQLSERVER_URL: "sqlserver://sa:Pivote_2026!@sqlserver:1433?database=pivote"
       REDIS_ADDR: "redis:6379"
       RABBITMQ_URL: "amqp://guest:guest@rabbitmq:5672/"
+      CORE_URL: "http://coresim:8090"
       JWT_SECRET: "secreto-local-pivote"
       DEV_TOKENS: "true"
     ports:
@@ -79,3 +80,14 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+
+  coresim:
+    build:
+      context: .
+      args:
+        SERVICE: coresim
+    environment:
+      CORE_MAX_DELAY: "8s"
+      CORE_FAIL_RATE: "0.10"
+    ports:
+      - "8090:8090"

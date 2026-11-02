@@ -18,6 +18,7 @@ type mocks struct {
 	accounts  *MockAccountRepository
 	transfers *MockTransferRepository
 	locker    *MockLocker
+	core      *MockCoreValidator
 }
 
 func newUseCase(t *testing.T) (*transferapp.CreateTransferUseCase, mocks) {
@@ -25,8 +26,9 @@ func newUseCase(t *testing.T) (*transferapp.CreateTransferUseCase, mocks) {
 		accounts:  NewMockAccountRepository(t),
 		transfers: NewMockTransferRepository(t),
 		locker:    NewMockLocker(t),
+		core:      NewMockCoreValidator(t),
 	}
-	return transferapp.NewCreateTransferUseCase(m.accounts, m.transfers, m.locker), m
+	return transferapp.NewCreateTransferUseCase(m.accounts, m.transfers, m.locker, m.core), m
 }
 
 func gtq(number, owner string, balance int64) *account.Account {
@@ -174,4 +176,44 @@ func TestCreateTransferUseCase_Execute_RedisDownStillWorks(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, "t1", out.Transfer.ID)
+}
+
+func TestCreateTransferUseCase_Execute_CoreValidation(t *testing.T) {
+	tests := []struct {
+		name       string
+		currency   string
+		amount     int64
+		balance    int64
+		coreErr    error
+		callsCore  bool
+		wantReason string
+	}{
+		{"gtq hasta 5000 no consulta", account.CurrencyGTQ, 500000, 1000000, nil, false, ""},
+		{"gtq mayor a 5000 aprobado", account.CurrencyGTQ, 500001, 1000000, nil, true, ""},
+		{"usd 650 no consulta", account.CurrencyUSD, 65000, 100000, nil, false, ""},
+		{"usd mayor a 650 aprobado", account.CurrencyUSD, 65001, 100000, nil, true, ""},
+		{"beneficiario rechazado", account.CurrencyGTQ, 600000, 1000000, transfer.ErrBeneficiaryRejected, true, transfer.ReasonCoreRejected},
+		{"core caido", account.CurrencyGTQ, 600000, 1000000, transfer.ErrCoreUnavailable, true, transfer.ReasonCoreUnavailable},
+		{"sin saldo no consulta", account.CurrencyGTQ, 600000, 100, nil, false, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			uc, m := newUseCase(t)
+			m.noPreviousResult()
+			m.lockOK()
+			m.accounts.EXPECT().GetByNumber(mock.Anything, "01").Return(&account.Account{Number: "01", OwnerID: "ana", Currency: tt.currency, Balance: tt.balance}, nil).Once()
+			m.accounts.EXPECT().GetByNumber(mock.Anything, "02").Return(&account.Account{Number: "02", OwnerID: "beto", Currency: tt.currency}, nil).Once()
+			if tt.callsCore {
+				m.core.EXPECT().ValidateBeneficiary(mock.Anything, mock.Anything).Return(tt.coreErr).Once()
+			}
+			m.transfers.EXPECT().
+				Execute(mock.Anything, mock.MatchedBy(func(o transfer.Order) bool { return o.CoreReason == tt.wantReason })).
+				Return(&transfer.Transfer{ID: "t1"}, nil).
+				Once()
+
+			_, err := uc.Execute(context.Background(), input(tt.amount))
+
+			require.NoError(t, err)
+		})
+	}
 }
