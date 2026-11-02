@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -76,6 +77,9 @@ func (r *TransferRepository) Execute(ctx context.Context, o transfer.Order) (*tr
 		if err := addDailyUsage(ctx, tx, from.Number, day, o.Amount); err != nil {
 			return nil, err
 		}
+	}
+	if err := insertOutbox(ctx, tx, transfer.NewEvent(t)); err != nil {
+		return nil, err
 	}
 	if err := saveIdempotencyKey(ctx, tx, o, t.ID); err != nil {
 		return nil, err
@@ -159,6 +163,15 @@ func addDailyUsage(ctx context.Context, tx *sql.Tx, number string, day time.Time
 	_, err := tx.ExecContext(ctx, `UPDATE daily_usage SET total = total + @p3 WHERE account_number = @p1 AND usage_date = @p2;
 IF @@ROWCOUNT = 0
     INSERT INTO daily_usage (account_number, usage_date, total) VALUES (@p1, @p2, @p3);`, number, day.Format(time.DateOnly), amount)
+	return err
+}
+
+func insertOutbox(ctx context.Context, tx *sql.Tx, ev transfer.Event) error {
+	payload, err := json.Marshal(ev)
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, "INSERT INTO outbox (event_id, event_type, payload) VALUES (@p1, @p2, @p3)", ev.ID, ev.Type, string(payload))
 	return err
 }
 

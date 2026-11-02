@@ -30,3 +30,12 @@ packages:
       structname: "MockLocker"
     interfaces:
       Locker:
+
+  github.com/ldmejia/PruebaPivote/internal/domain/audit:
+    config:
+      dir: "internal/application/audit"
+      pkgname: "auditapp_test"
+      filename: "audit_store_mock_test.go"
+      structname: "MockAuditStore"
+    interfaces:
+      Store:

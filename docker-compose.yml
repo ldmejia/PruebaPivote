@@ -52,6 +52,7 @@ services:
     environment:
       SQLSERVER_URL: "sqlserver://sa:Pivote_2026!@sqlserver:1433?database=pivote"
       REDIS_ADDR: "redis:6379"
+      RABBITMQ_URL: "amqp://guest:guest@rabbitmq:5672/"
       JWT_SECRET: "secreto-local-pivote"
       DEV_TOKENS: "true"
     ports:
@@ -60,6 +61,21 @@ services:
       sqlserver:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  auditor:
+    build:
+      context: .
+      args:
+        SERVICE: auditor
+    environment:
+      RABBITMQ_URL: "amqp://guest:guest@rabbitmq:5672/"
+      MONGO_URL: "mongodb://mongo:27017"
+      MONGO_DB: "auditoria"
+    depends_on:
+      mongo:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy

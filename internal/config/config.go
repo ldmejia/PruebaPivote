@@ -10,6 +10,7 @@ type Config struct {
 	Port         string
 	SQLServerURL string
 	RedisAddr    string
+	RabbitMQURL  string
 	JWTSecret    string
 	TokenTTL     time.Duration
 	DevTokens    bool
@@ -20,6 +21,7 @@ func Load() Config {
 		Port:         env("PORT", "8080"),
 		SQLServerURL: env("SQLSERVER_URL", "sqlserver://sa:Pivote_2026!@localhost:1433?database=pivote"),
 		RedisAddr:    env("REDIS_ADDR", "localhost:6379"),
+		RabbitMQURL:  env("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/"),
 		JWTSecret:    env("JWT_SECRET", "cambiar-en-produccion"),
 		TokenTTL:     envDuration("TOKEN_TTL", time.Hour),
 		DevTokens:    envBool("DEV_TOKENS", true),

@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"time"
 
 	goredis "github.com/redis/go-redis/v9"
 
@@ -11,6 +12,7 @@ import (
 	accounthttp "github.com/ldmejia/PruebaPivote/internal/adapters/http/account"
 	authhttp "github.com/ldmejia/PruebaPivote/internal/adapters/http/auth"
 	transferhttp "github.com/ldmejia/PruebaPivote/internal/adapters/http/transfer"
+	"github.com/ldmejia/PruebaPivote/internal/adapters/rabbitmq"
 	"github.com/ldmejia/PruebaPivote/internal/adapters/redis"
 	"github.com/ldmejia/PruebaPivote/internal/adapters/sqlserver"
 	"github.com/ldmejia/PruebaPivote/internal/adapters/sqlserver/migrations"
@@ -38,6 +40,9 @@ func main() {
 	if err := rdb.Ping(ctx).Err(); err != nil {
 		log.Fatalf("no se pudo conectar a redis: %v", err)
 	}
+
+	relay := rabbitmq.NewRelay(repository.NewOutboxRepository(db), cfg.RabbitMQURL, time.Second)
+	go relay.Run(ctx)
 
 	secret := []byte(cfg.JWTSecret)
 	authModule := authhttp.NewModule(secret, cfg.TokenTTL, cfg.DevTokens)
