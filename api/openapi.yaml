@@ -1,0 +1,422 @@
+openapi: 3.0.3
+info:
+  title: Pivote - Transferencias
+  version: 1.0.0
+  description: |
+    API para abrir cuentas en GTQ o USD, consultar saldo, bloquear/desbloquear,
+    transferir entre cuentas de la misma moneda y consultar el estado de cuenta.
+
+    Los montos viajan como texto con dos decimales ("1500.00").
+servers:
+  - url: http://localhost:8080
+security:
+  - bearerAuth: []
+
+paths:
+  /auth/token:
+    post:
+      tags: [auth]
+      summary: Token de prueba (solo con DEV_TOKENS=true)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_id]
+              properties:
+                user_id:
+                  type: string
+                  example: ana
+      responses:
+        "200":
+          description: Token emitido
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Token"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /accounts:
+    post:
+      tags: [cuentas]
+      summary: Abrir cuenta
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [currency]
+              properties:
+                currency:
+                  type: string
+                  enum: [GTQ, USD]
+                initial_balance:
+                  type: string
+                  example: "15000.00"
+      responses:
+        "201":
+          description: Cuenta creada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Account"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    get:
+      tags: [cuentas]
+      summary: Listar mis cuentas
+      responses:
+        "200":
+          description: Cuentas del usuario del token
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Account"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /accounts/{number}:
+    get:
+      tags: [cuentas]
+      summary: Consultar saldo
+      parameters:
+        - $ref: "#/components/parameters/Number"
+      responses:
+        "200":
+          description: Cuenta
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Account"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /accounts/{number}/block:
+    post:
+      tags: [cuentas]
+      summary: Bloquear cuenta
+      parameters:
+        - $ref: "#/components/parameters/Number"
+      responses:
+        "200":
+          description: Cuenta bloqueada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Account"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /accounts/{number}/unblock:
+    post:
+      tags: [cuentas]
+      summary: Desbloquear cuenta
+      parameters:
+        - $ref: "#/components/parameters/Number"
+      responses:
+        "200":
+          description: Cuenta desbloqueada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Account"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /accounts/{number}/statement:
+    get:
+      tags: [cuentas]
+      summary: Estado de cuenta paginado
+      description: Fechas en hora de Guatemala, ambas inclusive. Maximo 93 dias.
+      parameters:
+        - $ref: "#/components/parameters/Number"
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+            example: "2026-11-01"
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+            example: "2026-11-30"
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: Movimientos del rango, del mas reciente al mas antiguo
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Statement"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /transfers:
+    post:
+      tags: [transferencias]
+      summary: Transferir entre cuentas
+      description: |
+        La cuenta origen debe ser del usuario del token. Si se repite el mismo
+        Idempotency-Key con el mismo body (hasta 24 h o mas) se devuelve la misma
+        respuesta sin volver a mover dinero.
+
+        Transferencias mayores a Q5,000 / USD 650 se validan con el core.
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            maxLength: 100
+            example: 7b1c1f0e-0d55-4bd5-9a3b-6c4b8a1b2c3d
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [from_account, to_account, amount]
+              properties:
+                from_account:
+                  type: string
+                  example: "0112345678"
+                to_account:
+                  type: string
+                  example: "0187654321"
+                amount:
+                  type: string
+                  example: "250.00"
+      responses:
+        "201":
+          description: Transferencia completada
+          headers:
+            Idempotent-Replayed:
+              description: "true si es la respuesta guardada de un reintento"
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Transfer"
+        "422":
+          description: |
+            Transferencia rechazada (saldo_insuficiente, cuenta_bloqueada,
+            limite_diario_excedido, beneficiario_rechazado, core_no_disponible)
+            o Idempotency-Key reutilizada con otro body.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/Transfer"
+                  - $ref: "#/components/schemas/Error"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Hay otra solicitud en proceso con el mismo Idempotency-Key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: La operacion tardo demasiado, reintentar con el mismo Idempotency-Key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /health/live:
+    get:
+      tags: [salud]
+      summary: Liveness
+      security: []
+      responses:
+        "200":
+          description: El proceso esta vivo
+
+  /health/ready:
+    get:
+      tags: [salud]
+      summary: Readiness (SQL Server y Redis)
+      security: []
+      responses:
+        "200":
+          description: Listo para recibir trafico
+        "503":
+          description: Alguna dependencia no responde
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    Number:
+      name: number
+      in: path
+      required: true
+      schema:
+        type: string
+        example: "0112345678"
+
+  responses:
+    BadRequest:
+      description: Request invalido
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unauthorized:
+      description: Token invalido o ausente
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: No existe o no es del usuario
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+  schemas:
+    Token:
+      type: object
+      properties:
+        access_token:
+          type: string
+        token_type:
+          type: string
+          example: Bearer
+        expires_in:
+          type: integer
+          example: 3600
+
+    Account:
+      type: object
+      properties:
+        number:
+          type: string
+          example: "0112345678"
+        currency:
+          type: string
+          enum: [GTQ, USD]
+        balance:
+          type: string
+          example: "15000.00"
+        blocked:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    Transfer:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        from_account:
+          type: string
+        to_account:
+          type: string
+        amount:
+          type: string
+          example: "250.00"
+        currency:
+          type: string
+          enum: [GTQ, USD]
+        status:
+          type: string
+          enum: [completed, rejected]
+        reason:
+          type: string
+          enum: [saldo_insuficiente, cuenta_bloqueada, limite_diario_excedido, beneficiario_rechazado, core_no_disponible]
+        created_at:
+          type: string
+          format: date-time
+
+    Movement:
+      type: object
+      properties:
+        id:
+          type: integer
+        type:
+          type: string
+          enum: [APERTURA, DEBITO, CREDITO]
+        amount:
+          type: string
+        balance_after:
+          type: string
+        transfer_id:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+
+    Statement:
+      type: object
+      properties:
+        account:
+          type: string
+        currency:
+          type: string
+        from:
+          type: string
+          format: date
+        to:
+          type: string
+          format: date
+        page:
+          type: integer
+        page_size:
+          type: integer
+        total:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Movement"
+
+    Error:
+      type: object
+      properties:
+        code:
+          type: string
+          example: invalid_amount
+        message:
+          type: string

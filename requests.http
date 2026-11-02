@@ -1,0 +1,109 @@
+@baseUrl = http://localhost:8080
+
+### Token de prueba para ana
+# @name tokenAna
+POST {{baseUrl}}/auth/token
+Content-Type: application/json
+
+{"user_id": "ana"}
+
+### Token de prueba para beto
+# @name tokenBeto
+POST {{baseUrl}}/auth/token
+Content-Type: application/json
+
+{"user_id": "beto"}
+
+###
+@ana = {{tokenAna.response.body.access_token}}
+@beto = {{tokenBeto.response.body.access_token}}
+
+### Ana abre una cuenta en quetzales con saldo inicial
+# @name cuentaAna
+POST {{baseUrl}}/accounts
+Authorization: Bearer {{ana}}
+Content-Type: application/json
+
+{"currency": "GTQ", "initial_balance": "20000.00"}
+
+### Beto abre una cuenta en quetzales
+# @name cuentaBeto
+POST {{baseUrl}}/accounts
+Authorization: Bearer {{beto}}
+Content-Type: application/json
+
+{"currency": "GTQ"}
+
+###
+@cuentaAna = {{cuentaAna.response.body.number}}
+@cuentaBeto = {{cuentaBeto.response.body.number}}
+
+### Mis cuentas
+GET {{baseUrl}}/accounts
+Authorization: Bearer {{ana}}
+
+### Saldo
+GET {{baseUrl}}/accounts/{{cuentaAna}}
+Authorization: Bearer {{ana}}
+
+### Beto no puede ver la cuenta de Ana (404)
+GET {{baseUrl}}/accounts/{{cuentaAna}}
+Authorization: Bearer {{beto}}
+
+### Transferencia (repetir este request devuelve la misma respuesta)
+POST {{baseUrl}}/transfers
+Authorization: Bearer {{ana}}
+Content-Type: application/json
+Idempotency-Key: pago-001
+
+{"from_account": "{{cuentaAna}}", "to_account": "{{cuentaBeto}}", "amount": "250.00"}
+
+### Misma llave con otro monto (422 idempotency_key_reused)
+POST {{baseUrl}}/transfers
+Authorization: Bearer {{ana}}
+Content-Type: application/json
+Idempotency-Key: pago-001
+
+{"from_account": "{{cuentaAna}}", "to_account": "{{cuentaBeto}}", "amount": "300.00"}
+
+### Mayor a Q5,000: se valida con el core (puede tardar hasta 3.5 s)
+POST {{baseUrl}}/transfers
+Authorization: Bearer {{ana}}
+Content-Type: application/json
+Idempotency-Key: pago-002
+
+{"from_account": "{{cuentaAna}}", "to_account": "{{cuentaBeto}}", "amount": "5500.00"}
+
+### Saldo insuficiente (422 saldo_insuficiente)
+POST {{baseUrl}}/transfers
+Authorization: Bearer {{ana}}
+Content-Type: application/json
+Idempotency-Key: pago-003
+
+{"from_account": "{{cuentaAna}}", "to_account": "{{cuentaBeto}}", "amount": "999999.00"}
+
+### Bloquear
+POST {{baseUrl}}/accounts/{{cuentaBeto}}/block
+Authorization: Bearer {{beto}}
+
+### Transferir a una cuenta bloqueada (422 cuenta_bloqueada)
+POST {{baseUrl}}/transfers
+Authorization: Bearer {{ana}}
+Content-Type: application/json
+Idempotency-Key: pago-004
+
+{"from_account": "{{cuentaAna}}", "to_account": "{{cuentaBeto}}", "amount": "10.00"}
+
+### Desbloquear
+POST {{baseUrl}}/accounts/{{cuentaBeto}}/unblock
+Authorization: Bearer {{beto}}
+
+### Estado de cuenta
+GET {{baseUrl}}/accounts/{{cuentaAna}}/statement?from=2026-11-01&to=2026-11-30&page=1&page_size=20
+Authorization: Bearer {{ana}}
+
+### Salud
+GET {{baseUrl}}/health/ready
+
+### Metricas
+GET {{baseUrl}}/metrics
