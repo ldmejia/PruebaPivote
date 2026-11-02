@@ -4,9 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"time"
 
 	"github.com/ldmejia/PruebaPivote/internal/domain/account"
-	"github.com/ldmejia/PruebaPivote/internal/domain/transfer"
 )
 
 type AccountRepository struct {
@@ -47,7 +47,7 @@ VALUES (@p1, @p2, @p3, @p4)`, a.Number, a.OwnerID, a.Currency, a.Balance).Scan(&
 		return err
 	}
 	if a.Balance > 0 {
-		if err := insertMovement(ctx, tx, a.Number, "", transfer.MovementOpening, a.Balance, a.Balance); err != nil {
+		if err := insertMovement(ctx, tx, a.Number, "", account.MovementOpening, a.Balance, a.Balance); err != nil {
 			return err
 		}
 	}
@@ -88,4 +88,33 @@ func (r *AccountRepository) UpdateBlocked(ctx context.Context, a *account.Accoun
 		return account.ErrAccountNotFound
 	}
 	return nil
+}
+
+func (r *AccountRepository) ListMovements(ctx context.Context, number string, from, to time.Time, limit, offset int) ([]*account.Movement, int, error) {
+	var total int
+	err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM movements
+WHERE account_number = @p1 AND created_at >= @p2 AND created_at < @p3`, number, from, to).Scan(&total)
+	if err != nil {
+		return nil, 0, err
+	}
+	rows, err := r.db.QueryContext(ctx, `SELECT id, LOWER(CONVERT(VARCHAR(36), transfer_id)), type, amount, balance_after, created_at
+FROM movements
+WHERE account_number = @p1 AND created_at >= @p2 AND created_at < @p3
+ORDER BY created_at DESC, id DESC
+OFFSET @p4 ROWS FETCH NEXT @p5 ROWS ONLY`, number, from, to, offset, limit)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	list := []*account.Movement{}
+	for rows.Next() {
+		m := &account.Movement{AccountNumber: number}
+		var transferID sql.NullString
+		if err := rows.Scan(&m.ID, &transferID, &m.Type, &m.Amount, &m.BalanceAfter, &m.CreatedAt); err != nil {
+			return nil, 0, err
+		}
+		m.TransferID = transferID.String
+		list = append(list, m)
+	}
+	return list, total, rows.Err()
 }

@@ -54,7 +54,7 @@ func main() {
 
 	transferRepo := repository.NewTransferRepository(db)
 	coreClient := core.NewClient(cfg.CoreURL, cfg.CoreTimeout, core.NewBreaker(5, 15*time.Second))
-	transferUseCases := transferapp.NewTransferUseCases(accountRepo, transferRepo, redis.NewLocker(rdb), coreClient)
+	transferUseCases := transferapp.NewTransferUseCases(accountRepo, transferRepo, redis.NewLocker(rdb), coreClient, redis.NewFlags(rdb))
 	transferModule := transferhttp.NewModule(transferUseCases)
 
 	router := httpadapter.NewRouter(secret, authModule, accountModule, transferModule)

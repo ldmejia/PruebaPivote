@@ -130,10 +130,10 @@ func moveMoney(ctx context.Context, tx *sql.Tx, t *transfer.Transfer) error {
 	if err != nil {
 		return err
 	}
-	if err := insertMovement(ctx, tx, t.FromAccount, t.ID, transfer.MovementDebit, t.Amount, fromBalance); err != nil {
+	if err := insertMovement(ctx, tx, t.FromAccount, t.ID, account.MovementDebit, t.Amount, fromBalance); err != nil {
 		return err
 	}
-	return insertMovement(ctx, tx, t.ToAccount, t.ID, transfer.MovementCredit, t.Amount, toBalance)
+	return insertMovement(ctx, tx, t.ToAccount, t.ID, account.MovementCredit, t.Amount, toBalance)
 }
 
 func addBalance(ctx context.Context, tx *sql.Tx, number string, delta int64) (int64, error) {

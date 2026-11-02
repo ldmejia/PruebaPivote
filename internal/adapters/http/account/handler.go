@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/ldmejia/PruebaPivote/internal/adapters/http/httperror"
@@ -23,7 +24,7 @@ func NewHttpHandler(uc *accountapp.AccountUseCases) *HttpHandler {
 
 func writeAccountError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, account.ErrInvalidCurrency), errors.Is(err, account.ErrInvalidBalance):
+	case errors.Is(err, account.ErrInvalidCurrency), errors.Is(err, account.ErrInvalidBalance), errors.Is(err, account.ErrInvalidDateRange):
 		httperror.Write(w, http.StatusBadRequest, "invalid_request", err.Error())
 	case errors.Is(err, account.ErrAccountNotFound):
 		httperror.Write(w, http.StatusNotFound, "not_found", err.Error())
@@ -102,4 +103,23 @@ func (h *HttpHandler) UnblokAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = json.NewEncoder(w).Encode(toAccountResponse(a))
+}
+
+func (h *HttpHandler) GetStatement(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	page, _ := strconv.Atoi(q.Get("page"))
+	size, _ := strconv.Atoi(q.Get("page_size"))
+	out, err := h.uc.Statement.Execute(r.Context(), accountapp.StatementInput{
+		UserID:   middlewares.UserID(r.Context()),
+		Number:   r.PathValue("number"),
+		From:     q.Get("from"),
+		To:       q.Get("to"),
+		Page:     page,
+		PageSize: size,
+	})
+	if err != nil {
+		writeAccountError(w, err)
+		return
+	}
+	_ = json.NewEncoder(w).Encode(toStatementResponse(out))
 }

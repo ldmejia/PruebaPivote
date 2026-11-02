@@ -34,6 +34,10 @@ packages:
         config:
           filename: "core_validator_mock_test.go"
           structname: "MockCoreValidator"
+      Flags:
+        config:
+          filename: "flags_mock_test.go"
+          structname: "MockFlags"
 
   github.com/ldmejia/PruebaPivote/internal/domain/audit:
     config:

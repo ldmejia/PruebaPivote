@@ -20,9 +20,9 @@ type TransferUseCases struct {
 	Create *CreateTransferUseCase
 }
 
-func NewTransferUseCases(accounts account.Repository, transfers transfer.Repository, locker Locker, core CoreValidator) *TransferUseCases {
+func NewTransferUseCases(accounts account.Repository, transfers transfer.Repository, locker Locker, core CoreValidator, flags Flags) *TransferUseCases {
 	return &TransferUseCases{
-		Create: NewCreateTransferUseCase(accounts, transfers, locker, core),
+		Create: NewCreateTransferUseCase(accounts, transfers, locker, core, flags),
 	}
 }
 
@@ -44,10 +44,11 @@ type CreateTransferUseCase struct {
 	transfers transfer.Repository
 	locker    Locker
 	core      CoreValidator
+	flags     Flags
 }
 
-func NewCreateTransferUseCase(accounts account.Repository, transfers transfer.Repository, locker Locker, core CoreValidator) *CreateTransferUseCase {
-	return &CreateTransferUseCase{accounts: accounts, transfers: transfers, locker: locker, core: core}
+func NewCreateTransferUseCase(accounts account.Repository, transfers transfer.Repository, locker Locker, core CoreValidator, flags Flags) *CreateTransferUseCase {
+	return &CreateTransferUseCase{accounts: accounts, transfers: transfers, locker: locker, core: core, flags: flags}
 }
 
 func (u *CreateTransferUseCase) Execute(ctx context.Context, input CreateTransferInput) (*CreateTransferOutput, error) {
@@ -118,7 +119,7 @@ func (u *CreateTransferUseCase) newOrder(ctx context.Context, input CreateTransf
 }
 
 func (u *CreateTransferUseCase) validateWithCore(ctx context.Context, from, to *account.Account, o transfer.Order) string {
-	if o.Amount <= transfer.CoreThreshold(from.Currency) {
+	if o.Amount <= transfer.CoreThreshold(from.Currency) || !u.flags.CoreValidationEnabled(ctx) {
 		return ""
 	}
 	// si igual se va a rechazar no vale la pena esperar al core

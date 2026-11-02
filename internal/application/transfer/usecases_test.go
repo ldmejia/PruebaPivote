@@ -19,6 +19,7 @@ type mocks struct {
 	transfers *MockTransferRepository
 	locker    *MockLocker
 	core      *MockCoreValidator
+	flags     *MockFlags
 }
 
 func newUseCase(t *testing.T) (*transferapp.CreateTransferUseCase, mocks) {
@@ -27,8 +28,10 @@ func newUseCase(t *testing.T) (*transferapp.CreateTransferUseCase, mocks) {
 		transfers: NewMockTransferRepository(t),
 		locker:    NewMockLocker(t),
 		core:      NewMockCoreValidator(t),
+		flags:     NewMockFlags(t),
 	}
-	return transferapp.NewCreateTransferUseCase(m.accounts, m.transfers, m.locker, m.core), m
+	m.flags.EXPECT().CoreValidationEnabled(mock.Anything).Return(true).Maybe()
+	return transferapp.NewCreateTransferUseCase(m.accounts, m.transfers, m.locker, m.core, m.flags), m
 }
 
 func gtq(number, owner string, balance int64) *account.Account {
@@ -216,4 +219,25 @@ func TestCreateTransferUseCase_Execute_CoreValidation(t *testing.T) {
 			require.NoError(t, err)
 		})
 	}
+}
+
+func TestCreateTransferUseCase_Execute_CoreFlagOff(t *testing.T) {
+	m := mocks{
+		accounts:  NewMockAccountRepository(t),
+		transfers: NewMockTransferRepository(t),
+		locker:    NewMockLocker(t),
+		core:      NewMockCoreValidator(t),
+		flags:     NewMockFlags(t),
+	}
+	uc := transferapp.NewCreateTransferUseCase(m.accounts, m.transfers, m.locker, m.core, m.flags)
+	m.flags.EXPECT().CoreValidationEnabled(mock.Anything).Return(false).Once()
+	m.noPreviousResult()
+	m.lockOK()
+	m.accounts.EXPECT().GetByNumber(mock.Anything, "01").Return(gtq("01", "ana", 1000000), nil).Once()
+	m.accounts.EXPECT().GetByNumber(mock.Anything, "02").Return(gtq("02", "beto", 0), nil).Once()
+	m.transfers.EXPECT().Execute(mock.Anything, mock.Anything).Return(&transfer.Transfer{ID: "t1"}, nil).Once()
+
+	_, err := uc.Execute(context.Background(), input(600000))
+
+	require.NoError(t, err)
 }

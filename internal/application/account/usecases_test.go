@@ -87,3 +87,15 @@ func TestBlockAccountUseCase_Execute_UpdateError(t *testing.T) {
 
 	assert.ErrorIs(t, err, dbErr)
 }
+
+func TestStatementUseCase_Execute_InvalidRange(t *testing.T) {
+	repo := NewMockAccountRepository(t)
+	uc := accountapp.NewStatementUseCase(repo)
+
+	repo.EXPECT().GetByNumber(mock.Anything, "01").Return(&account.Account{Number: "01", OwnerID: "ana"}, nil).Times(3)
+
+	for _, r := range [][2]string{{"", ""}, {"2026-11-05", "2026-11-01"}, {"2026-01-01", "2026-11-01"}} {
+		_, err := uc.Execute(context.Background(), accountapp.StatementInput{UserID: "ana", Number: "01", From: r[0], To: r[1]})
+		assert.ErrorIs(t, err, account.ErrInvalidDateRange)
+	}
+}

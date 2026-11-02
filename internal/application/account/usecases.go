@@ -3,25 +3,28 @@ package accountapp
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/ldmejia/PruebaPivote/internal/domain/account"
 )
 
 type AccountUseCases struct {
-	Open    *OpenAccountUseCase
-	Get     *GetAccountUseCase
-	List    *ListAccountsUseCase
-	Block   *BlockAccountUseCase
-	Unblock *UnblockAccountUseCase
+	Open      *OpenAccountUseCase
+	Get       *GetAccountUseCase
+	List      *ListAccountsUseCase
+	Block     *BlockAccountUseCase
+	Unblock   *UnblockAccountUseCase
+	Statement *StatementUseCase
 }
 
 func NewAccountUseCases(repo account.Repository) *AccountUseCases {
 	return &AccountUseCases{
-		Open:    NewOpenAccountUseCase(repo),
-		Get:     NewGetAccountUseCase(repo),
-		List:    NewListAccountsUseCase(repo),
-		Block:   NewBlockAccountUseCase(repo),
-		Unblock: NewUnblockAccountUseCase(repo),
+		Open:      NewOpenAccountUseCase(repo),
+		Get:       NewGetAccountUseCase(repo),
+		List:      NewListAccountsUseCase(repo),
+		Block:     NewBlockAccountUseCase(repo),
+		Unblock:   NewUnblockAccountUseCase(repo),
+		Statement: NewStatementUseCase(repo),
 	}
 }
 
@@ -121,4 +124,56 @@ func (u *UnblockAccountUseCase) Execute(ctx context.Context, input GetAccountInp
 		return nil, err
 	}
 	return a, nil
+}
+
+type StatementInput struct {
+	UserID   string
+	Number   string
+	From     string
+	To       string
+	Page     int
+	PageSize int
+}
+
+type StatementOutput struct {
+	Account   *account.Account
+	From      string
+	To        string
+	Page      int
+	PageSize  int
+	Total     int
+	Movements []*account.Movement
+}
+
+type StatementUseCase struct{ get *GetAccountUseCase }
+
+func NewStatementUseCase(repo account.Repository) *StatementUseCase {
+	return &StatementUseCase{get: NewGetAccountUseCase(repo)}
+}
+
+func (u *StatementUseCase) Execute(ctx context.Context, input StatementInput) (*StatementOutput, error) {
+	a, err := u.get.Execute(ctx, GetAccountInput{UserID: input.UserID, Number: input.Number})
+	if err != nil {
+		return nil, err
+	}
+	from, err := time.Parse(time.DateOnly, input.From)
+	if err != nil {
+		return nil, account.ErrInvalidDateRange
+	}
+	to, err := time.Parse(time.DateOnly, input.To)
+	if err != nil || to.Before(from) || to.Sub(from) > 93*24*time.Hour {
+		return nil, account.ErrInvalidDateRange
+	}
+	if input.Page < 1 {
+		input.Page = 1
+	}
+	if input.PageSize < 1 || input.PageSize > 100 {
+		input.PageSize = 20
+	}
+	offset := input.Page * input.PageSize
+	list, total, err := u.get.repo.ListMovements(ctx, a.Number, from, to.AddDate(0, 0, 1), input.PageSize, offset)
+	if err != nil {
+		return nil, err
+	}
+	return &StatementOutput{Account: a, From: input.From, To: input.To, Page: input.Page, PageSize: input.PageSize, Total: total, Movements: list}, nil
 }

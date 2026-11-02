@@ -6,6 +6,7 @@ package accountapp_test
 
 import (
 	"context"
+	"time"
 
 	"github.com/ldmejia/PruebaPivote/internal/domain/account"
 	mock "github.com/stretchr/testify/mock"
@@ -236,6 +237,104 @@ func (_c *MockAccountRepository_ListByOwner_Call) Return(accounts []*account.Acc
 }
 
 func (_c *MockAccountRepository_ListByOwner_Call) RunAndReturn(run func(ctx context.Context, ownerID string) ([]*account.Account, error)) *MockAccountRepository_ListByOwner_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// ListMovements provides a mock function for the type MockAccountRepository
+func (_mock *MockAccountRepository) ListMovements(ctx context.Context, number string, from time.Time, to time.Time, limit int, offset int) ([]*account.Movement, int, error) {
+	ret := _mock.Called(ctx, number, from, to, limit, offset)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ListMovements")
+	}
+
+	var r0 []*account.Movement
+	var r1 int
+	var r2 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, time.Time, time.Time, int, int) ([]*account.Movement, int, error)); ok {
+		return returnFunc(ctx, number, from, to, limit, offset)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, time.Time, time.Time, int, int) []*account.Movement); ok {
+		r0 = returnFunc(ctx, number, from, to, limit, offset)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]*account.Movement)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, time.Time, time.Time, int, int) int); ok {
+		r1 = returnFunc(ctx, number, from, to, limit, offset)
+	} else {
+		r1 = ret.Get(1).(int)
+	}
+	if returnFunc, ok := ret.Get(2).(func(context.Context, string, time.Time, time.Time, int, int) error); ok {
+		r2 = returnFunc(ctx, number, from, to, limit, offset)
+	} else {
+		r2 = ret.Error(2)
+	}
+	return r0, r1, r2
+}
+
+// MockAccountRepository_ListMovements_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListMovements'
+type MockAccountRepository_ListMovements_Call struct {
+	*mock.Call
+}
+
+// ListMovements is a helper method to define mock.On call
+//   - ctx context.Context
+//   - number string
+//   - from time.Time
+//   - to time.Time
+//   - limit int
+//   - offset int
+func (_e *MockAccountRepository_Expecter) ListMovements(ctx any, number any, from any, to any, limit any, offset any) *MockAccountRepository_ListMovements_Call {
+	return &MockAccountRepository_ListMovements_Call{Call: _e.mock.On("ListMovements", ctx, number, from, to, limit, offset)}
+}
+
+func (_c *MockAccountRepository_ListMovements_Call) Run(run func(ctx context.Context, number string, from time.Time, to time.Time, limit int, offset int)) *MockAccountRepository_ListMovements_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 time.Time
+		if args[2] != nil {
+			arg2 = args[2].(time.Time)
+		}
+		var arg3 time.Time
+		if args[3] != nil {
+			arg3 = args[3].(time.Time)
+		}
+		var arg4 int
+		if args[4] != nil {
+			arg4 = args[4].(int)
+		}
+		var arg5 int
+		if args[5] != nil {
+			arg5 = args[5].(int)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+			arg4,
+			arg5,
+		)
+	})
+	return _c
+}
+
+func (_c *MockAccountRepository_ListMovements_Call) Return(movements []*account.Movement, n int, err error) *MockAccountRepository_ListMovements_Call {
+	_c.Call.Return(movements, n, err)
+	return _c
+}
+
+func (_c *MockAccountRepository_ListMovements_Call) RunAndReturn(run func(ctx context.Context, number string, from time.Time, to time.Time, limit int, offset int) ([]*account.Movement, int, error)) *MockAccountRepository_ListMovements_Call {
 	_c.Call.Return(run)
 	return _c
 }

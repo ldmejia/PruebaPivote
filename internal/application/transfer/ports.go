@@ -15,3 +15,7 @@ type Locker interface {
 type CoreValidator interface {
 	ValidateBeneficiary(ctx context.Context, t *transfer.Transfer) error
 }
+
+type Flags interface {
+	CoreValidationEnabled(ctx context.Context) bool
+}
