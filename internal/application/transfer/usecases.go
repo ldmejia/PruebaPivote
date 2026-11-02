@@ -66,7 +66,7 @@ func (u *CreateTransferUseCase) Execute(ctx context.Context, input CreateTransfe
 		return u.wait(ctx, input, hash)
 	}
 	if locked {
-		defer u.locker.Unlock(context.WithoutCancel(ctx), lockKey, token)
+		defer func() { _ = u.locker.Unlock(context.WithoutCancel(ctx), lockKey, token) }()
 	}
 
 	order, err := u.newOrder(ctx, input, hash)

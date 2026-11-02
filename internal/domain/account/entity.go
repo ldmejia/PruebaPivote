@@ -1,8 +1,9 @@
 package account
 
 import (
+	"crypto/rand"
 	"fmt"
-	"math/rand/v2"
+	"math/big"
 	"time"
 )
 
@@ -53,5 +54,9 @@ func newNumber(currency string) string {
 	if currency == CurrencyUSD {
 		prefix = "02"
 	}
-	return fmt.Sprintf("%s%08d", prefix, rand.IntN(100000000))
+	n, err := rand.Int(rand.Reader, big.NewInt(100000000))
+	if err != nil {
+		panic(err)
+	}
+	return fmt.Sprintf("%s%08d", prefix, n.Int64())
 }

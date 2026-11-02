@@ -64,7 +64,7 @@ func main() {
 		}
 		log.Printf("validacion ref=%s approved=%v delay=%s", req.Reference, resp.Approved, delay)
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	})
 
 	srv := &http.Server{Addr: ":" + port, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
@@ -79,7 +79,9 @@ func main() {
 	<-ctx.Done()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	srv.Shutdown(shutdownCtx)
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Printf("no se pudo apagar ordenadamente: %v", err)
+	}
 }
 
 func getenv(key, def string) string {

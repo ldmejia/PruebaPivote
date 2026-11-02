@@ -21,30 +21,8 @@ func (r *OutboxRepository) PublishPending(ctx context.Context, limit int, publis
 		return 0, err
 	}
 	defer tx.Rollback()
-	rows, err := tx.QueryContext(ctx, `SELECT TOP (@p1) id, LOWER(CONVERT(VARCHAR(36), event_id)), event_type, payload
-FROM outbox WITH (UPDLOCK, READPAST, ROWLOCK)
-WHERE published_at IS NULL
-ORDER BY id`, limit)
+	list, err := lockPending(ctx, tx, limit)
 	if err != nil {
-		return 0, err
-	}
-	type pending struct {
-		id  int64
-		msg rabbitmq.OutboxMessage
-	}
-	var list []pending
-	for rows.Next() {
-		var p pending
-		var payload string
-		if err := rows.Scan(&p.id, &p.msg.EventID, &p.msg.Type, &payload); err != nil {
-			rows.Close()
-			return 0, err
-		}
-		p.msg.Payload = []byte(payload)
-		list = append(list, p)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
 		return 0, err
 	}
 
@@ -63,4 +41,31 @@ ORDER BY id`, limit)
 		return 0, err
 	}
 	return published, publishErr
+}
+
+type pendingEvent struct {
+	id  int64
+	msg rabbitmq.OutboxMessage
+}
+
+func lockPending(ctx context.Context, tx *sql.Tx, limit int) ([]pendingEvent, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT TOP (@p1) id, LOWER(CONVERT(VARCHAR(36), event_id)), event_type, payload
+FROM outbox WITH (UPDLOCK, READPAST, ROWLOCK)
+WHERE published_at IS NULL
+ORDER BY id`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var list []pendingEvent
+	for rows.Next() {
+		var p pendingEvent
+		var payload string
+		if err := rows.Scan(&p.id, &p.msg.EventID, &p.msg.Type, &payload); err != nil {
+			return nil, err
+		}
+		p.msg.Payload = []byte(payload)
+		list = append(list, p)
+	}
+	return list, rows.Err()
 }

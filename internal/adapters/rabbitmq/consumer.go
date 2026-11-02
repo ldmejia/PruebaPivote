@@ -62,7 +62,7 @@ func (c *Consumer) consume(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			log.Println("apagando auditor, se deja de consumir")
-			ch.Cancel("auditor", false)
+			_ = ch.Cancel("auditor", false)
 			return nil
 		case err := <-closed:
 			return err
@@ -81,8 +81,12 @@ func (c *Consumer) handle(msg amqp.Delivery) {
 	defer cancel()
 	if err := c.uc.Execute(ctx, msg.Body, msg.RoutingKey); err != nil {
 		log.Printf("no se pudo registrar el evento, se manda a la dlq: %v", err)
-		msg.Nack(false, false)
+		if err := msg.Nack(false, false); err != nil {
+			log.Printf("no se pudo hacer nack: %v", err)
+		}
 		return
 	}
-	msg.Ack(false)
+	if err := msg.Ack(false); err != nil {
+		log.Printf("no se pudo hacer ack: %v", err)
+	}
 }

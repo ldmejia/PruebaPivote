@@ -44,7 +44,7 @@ func (c *Client) ValidateBeneficiary(ctx context.Context, t *transfer.Transfer) 
 	ok, err := c.call(ctx, t)
 	if err != nil {
 		c.breaker.Failure()
-		return fmt.Errorf("%w: %v", transfer.ErrCoreUnavailable, err)
+		return fmt.Errorf("%w: %w", transfer.ErrCoreUnavailable, err)
 	}
 	c.breaker.Success()
 	if !ok {

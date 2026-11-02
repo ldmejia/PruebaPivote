@@ -31,7 +31,7 @@ func main() {
 	defer func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		client.Disconnect(ctx)
+		_ = client.Disconnect(ctx)
 	}()
 
 	uc := auditapp.NewRecordEventUseCase(mongoadapter.NewAuditStore(client.Database(mongoDB)), 3, 500*time.Millisecond)
