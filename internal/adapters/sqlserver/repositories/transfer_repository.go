@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ldmejia/PruebaPivote/internal/domain/account"
+	"github.com/ldmejia/PruebaPivote/internal/domain/shared"
 	"github.com/ldmejia/PruebaPivote/internal/domain/transfer"
 )
 
@@ -59,7 +60,7 @@ func (r *TransferRepository) Execute(ctx context.Context, o transfer.Order) (*tr
 		Status:      transfer.StatusCompleted,
 		CreatedAt:   o.CreatedAt,
 	}
-	day := o.CreatedAt
+	day := shared.LocalDay(o.CreatedAt)
 	used, err := dailyUsage(ctx, tx, from.Number, day)
 	if err != nil {
 		return nil, err

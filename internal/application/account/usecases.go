@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/ldmejia/PruebaPivote/internal/domain/account"
+	"github.com/ldmejia/PruebaPivote/internal/domain/shared"
 )
 
 type AccountUseCases struct {
@@ -156,11 +157,11 @@ func (u *StatementUseCase) Execute(ctx context.Context, input StatementInput) (*
 	if err != nil {
 		return nil, err
 	}
-	from, err := time.Parse(time.DateOnly, input.From)
+	from, err := time.ParseInLocation(time.DateOnly, input.From, shared.Guatemala)
 	if err != nil {
 		return nil, account.ErrInvalidDateRange
 	}
-	to, err := time.Parse(time.DateOnly, input.To)
+	to, err := time.ParseInLocation(time.DateOnly, input.To, shared.Guatemala)
 	if err != nil || to.Before(from) || to.Sub(from) > 93*24*time.Hour {
 		return nil, account.ErrInvalidDateRange
 	}
@@ -170,8 +171,8 @@ func (u *StatementUseCase) Execute(ctx context.Context, input StatementInput) (*
 	if input.PageSize < 1 || input.PageSize > 100 {
 		input.PageSize = 20
 	}
-	offset := input.Page * input.PageSize
-	list, total, err := u.get.repo.ListMovements(ctx, a.Number, from, to.AddDate(0, 0, 1), input.PageSize, offset)
+	offset := (input.Page - 1) * input.PageSize
+	list, total, err := u.get.repo.ListMovements(ctx, a.Number, from.UTC(), to.AddDate(0, 0, 1).UTC(), input.PageSize, offset)
 	if err != nil {
 		return nil, err
 	}

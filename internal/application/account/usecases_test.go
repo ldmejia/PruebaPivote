@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -98,4 +99,39 @@ func TestStatementUseCase_Execute_InvalidRange(t *testing.T) {
 		_, err := uc.Execute(context.Background(), accountapp.StatementInput{UserID: "ana", Number: "01", From: r[0], To: r[1]})
 		assert.ErrorIs(t, err, account.ErrInvalidDateRange)
 	}
+}
+
+func TestStatementUseCase_Execute_Pagination(t *testing.T) {
+	tests := []struct {
+		page, size, wantLimit, wantOffset int
+	}{
+		{1, 10, 10, 0},
+		{2, 10, 10, 10},
+		{0, 0, 20, 0},
+		{3, 500, 20, 40},
+	}
+	for _, tt := range tests {
+		repo := NewMockAccountRepository(t)
+		uc := accountapp.NewStatementUseCase(repo)
+		repo.EXPECT().GetByNumber(mock.Anything, "01").Return(&account.Account{Number: "01", OwnerID: "ana"}, nil).Once()
+		repo.EXPECT().ListMovements(mock.Anything, "01", mock.Anything, mock.Anything, tt.wantLimit, tt.wantOffset).Return(nil, 0, nil).Once()
+
+		_, err := uc.Execute(context.Background(), accountapp.StatementInput{UserID: "ana", Number: "01", From: "2026-11-01", To: "2026-11-01", Page: tt.page, PageSize: tt.size})
+
+		require.NoError(t, err)
+	}
+}
+
+func TestStatementUseCase_Execute_GuatemalaDays(t *testing.T) {
+	repo := NewMockAccountRepository(t)
+	uc := accountapp.NewStatementUseCase(repo)
+
+	from, _ := time.Parse(time.RFC3339, "2026-11-01T06:00:00Z")
+	to, _ := time.Parse(time.RFC3339, "2026-11-03T06:00:00Z")
+	repo.EXPECT().GetByNumber(mock.Anything, "01").Return(&account.Account{Number: "01", OwnerID: "ana"}, nil).Once()
+	repo.EXPECT().ListMovements(mock.Anything, "01", from, to, 20, 0).Return(nil, 0, nil).Once()
+
+	_, err := uc.Execute(context.Background(), accountapp.StatementInput{UserID: "ana", Number: "01", From: "2026-11-01", To: "2026-11-02"})
+
+	require.NoError(t, err)
 }
